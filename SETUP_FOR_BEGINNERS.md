@@ -1,193 +1,194 @@
-# How to Run WisprClone (Beginner Guide)
+# WisprClone — Setup Guide for Non‑Technical Mac Users
 
-This guide assumes you have never used Xcode before. Follow the steps in order.  
-If something asks for a password, that is normal on a Mac.
+This guide is for someone who has **never used Xcode or Terminal** before.  
+Follow the steps in order. Take your time — the first setup is the slowest; everyday use is much simpler.
 
----
-
-## What this app does
-
-WisprClone lives in your **menu bar** (top-right of the screen).  
-You press a keyboard shortcut, speak, pause, and it types what you said into whatever app you were using (Notes, Slack, email, etc.).
-
-It does **not** show a normal app icon in the Dock.
+**GitHub repository:** [https://github.com/khandelwalakshat50/WhisprClone](https://github.com/khandelwalakshat50/WhisprClone)
 
 ---
 
-## Before you start — checklist
+## What WisprClone does
 
-You need:
+WisprClone is a **menu‑bar dictation app** for Mac (no Dock icon in normal use).
 
-1. A Mac running **macOS Sequoia (15)** or newer  
-   - Click the Apple menu → **About This Mac** to check.
-2. An internet connection (first launch downloads speech models; cloud formatting needs the web).
-3. About **30–60 minutes** the first time (mostly waiting for downloads).
-4. At least one API key already in your `.env` file (OpenAI and/or Groq) — if someone set that up for you, you can skip the “API keys” section.
+1. You press a keyboard shortcut and speak.
+2. WisprClone turns your speech into text on your Mac.
+3. It can optionally clean up the wording (punctuation, filler words).
+4. It pastes the result into whatever app you were typing in (Notes, Slack, Mail, browser, etc.).
 
 ---
 
-## Step 1 — Install Xcode (the free Apple developer app)
+## What you need
 
-WisprClone is built with Apple’s tools. You run it through **Xcode**.
+| Requirement | Notes |
+|---|---|
+| A Mac | **macOS 15 (Sequoia)** or newer — Apple menu → **About This Mac** |
+| Internet | Needed the first time (downloads speech model + optional cloud formatting) |
+| Time | First setup: about **30–60 minutes** (mostly waiting for downloads) |
+| Optional API keys | Groq and/or OpenAI — only if you want cloud text cleanup |
+| Optional Ollama | Only if you want cleanup that never leaves your Mac |
 
-1. Open the **App Store** on your Mac.
+---
+
+## Step 1 — Get the project from GitHub
+
+### Option A — Download as a ZIP (easiest)
+
+1. Open this page in a browser:  
+   [https://github.com/khandelwalakshat50/WhisprClone](https://github.com/khandelwalakshat50/WhisprClone)
+2. Click the green **Code** button.
+3. Click **Download ZIP**.
+4. In **Downloads**, double‑click the ZIP to unzip it.
+5. Move the folder somewhere easy to find (for example **Documents**).  
+   You should see a file named **`WisprClone.xcodeproj`** inside.
+
+### Option B — Clone with GitHub Desktop (also friendly)
+
+1. Install [GitHub Desktop](https://desktop.github.com/).
+2. **File → Clone Repository → URL**.
+3. Paste: `https://github.com/khandelwalakshat50/WhisprClone`
+4. Choose a local folder and click **Clone**.
+
+---
+
+## Step 2 — Install Xcode (free, from Apple)
+
+WisprClone is built with Apple’s developer tools. You run it through **Xcode**.
+
+1. Open the **App Store**.
 2. Search for **Xcode**.
-3. Click **Get** / **Install** (it is large — several GB; go make tea).
-4. When install finishes, open **Xcode** once.
-5. If it asks to install **additional components**, click **Install** and wait.
+3. Click **Get** / **Install** (it is large — several gigabytes).
+4. When finished, open **Xcode** once.
+5. Install any **additional components** it asks for.
 6. Agree to the license if asked.
 
-You only need to do this once.
+You only do this once.
 
 ---
 
-## Step 2 — Open the project
+## Step 3 — Open the project in Xcode
 
-1. Open **Finder**.
-2. Go to the folder: **OpenWhisper** (usually in your user folder, or wherever it was saved).
-3. Double-click the file named:
+1. In Finder, open the WisprClone / OpenWhisper folder you downloaded.
+2. Double‑click **`WisprClone.xcodeproj`** (blue Xcode icon).
+3. Wait until the spinner at the top of Xcode stops.
 
-   **`WisprClone.xcodeproj`**
+### If Xcode asks about packages (WhisperKit)
 
-   (It looks like a blue blueprint / Xcode icon.)
-
-4. Xcode opens. Wait until the progress spinner at the top stops.
-
-### If Xcode says packages need to resolve
-
-You may see a message about **WhisperKit** or Swift packages.
-
-1. In the menu bar, click **File**.
-2. Click **Packages** → **Resolve Package Versions** (or **Update to Latest Package Versions**).
-3. Wait until downloading finishes. This can take several minutes.
+1. Menu: **File → Packages → Resolve Package Versions**.
+2. Wait for downloads to finish (can take several minutes the first time).
 
 ---
 
-## Step 3 — Put in your API keys (if not already done)
+## Step 4 — API keys (optional, for cloud cleanup)
 
-The app can clean up your wording using **Groq** and/or **OpenAI**.
+Speech transcription can run **entirely on your Mac**.  
+Cleanup (“make this sound like writing”) can use:
 
-1. In Finder, open the **OpenWhisper** folder.
-2. Find the file named **`.env`**  
-   - If you do not see it: press **Command + Shift + .** (period) to show hidden files.
-3. Open `.env` with **TextEdit**.
-4. You should see two lines like:
+- **Groq** or **OpenAI** (cloud — text leaves your Mac for that step), or  
+- **Ollama** (local — text stays on your Mac), or  
+- Skip cleanup and paste raw transcripts.
+
+### Using Preferences (recommended for beginners)
+
+1. Run the app once (Step 5).
+2. Click **Wispr** in the menu bar → **Preferences…**
+3. Paste your Groq and/or OpenAI key into the fields.
+4. Keys are stored in your Mac’s **Keychain** (not uploaded to GitHub).
+
+### Or using a `.env` file
+
+1. In the project folder, copy `.env.example` to `.env` if needed.
+2. In Finder, press **Command + Shift + .** to show hidden files.
+3. Open `.env` in TextEdit and fill in:
 
    ```
-   OPENAI_API_KEY=...
-   GROQ_API_KEY=...
+   OPENAI_API_KEY=sk-...
+   GROQ_API_KEY=gsk-...
    ```
 
-5. Replace the text after each `=` with your real key (no spaces).
-6. Save (**Command + S**) and close.
+4. Save. **Never commit this file or share it.**
 
-You only need **one** key to use cloud formatting. Both is fine.
-
-**Keep this file private.** Do not email it or put it on GitHub.
+You only need **one** cloud key if you use cloud formatting.
 
 ---
 
-## Step 4 — Run the app from Xcode
+## Step 5 — Run the app
 
-1. At the top of the Xcode window, make sure the scheme says **WisprClone** (next to a stop/play area).
-2. Next to that, choose **My Mac** (not an iPhone).
-3. Click the big **Play** button (▶) in the top-left  
-   — or press **Command + R**.
-4. The first build can take several minutes. Wait for “Build Succeeded”.
-5. If macOS asks whether to allow the app, click **Allow** / **Open**.
+1. At the top of Xcode, make sure the scheme says **WisprClone**.
+2. Choose **My Mac** (not an iPhone).
+3. Click the **Play** button ▶ — or press **Command + R**.
+4. Wait for “Build Succeeded”. The first build can take several minutes.
 
 ### What you should see
 
-- In **Debug** runs from Xcode: a **Dock icon** named WisprClone (so you know it launched).
-- In the **menu bar** (top-right): a mic icon plus the word **Wispr**.
-  - On a MacBook with a notch, check the **»** overflow chevron on the right side of the menu bar.
-- Click **Wispr** → you should see **Start Dictation**, Preferences, About, Quit.
+- A **Wispr** / mic item in the **menu bar** (top‑right of the screen).  
+  On a MacBook with a notch, check the **»** overflow menu on the right.
+- Click it → **Start Dictation**, **Preferences…**, **Quit**.
 
-If there is no icon: make sure you pressed **Play ▶** (⌘R), not only Build. Check Xcode’s bottom console for crashes.
+If you see nothing: confirm you pressed **Play ▶**, not only Build. Check the menu bar overflow.
 
-### Keyboard shortcut does nothing?
+---
 
-1. Click the **Wispr** menu → **Start Dictation** (this works without the hotkey).
-2. Enable **Input Monitoring** + **Accessibility** for **WisprClone** (and also **Xcode** if you run from Xcode):
-   - Apple menu → System Settings → Privacy & Security → Input Monitoring / Accessibility.
-3. Quit WisprClone completely, then press Play ▶ again.
-4. Then try **⌘⇧Space** again.
+## Step 6 — Turn on Mac permissions (required)
 
---- 
-
-## Step 5 — Turn on Mac permissions (required)
-
-Without these, the app cannot hear you or type into other apps.
-
-### A. Open Preferences in the app
-
-1. Click the waveform icon in the menu bar.
-2. Click **Preferences…**
-
-### B. Grant each permission
-
-In Preferences, use **Open Settings** next to each item, or go manually:
+Without these, the app cannot hear you, see your shortcuts, or paste text.
 
 **Apple menu → System Settings → Privacy & Security**
 
-Turn **on** WisprClone (or Xcode, if that’s how it appears) for:
+Enable **WisprClone** (or **Xcode**, if you only run from Xcode) for:
 
-| Permission | Why |
+| Permission | Why it matters |
 |---|---|
-| **Microphone** | So it can hear you |
-| **Accessibility** | So it can paste text into other apps |
-| **Input Monitoring** | So the keyboard shortcut works globally |
-| **Speech Recognition** (optional) | Only if you pick “Apple Speech” in Preferences |
+| **Microphone** | Hear your voice |
+| **Accessibility** | Paste text into other apps |
+| **Input Monitoring** | Global keyboard shortcuts |
+| **Speech Recognition** | Only if you choose Apple Speech in Preferences |
 
-After changing a permission, you may need to:
+After changing permissions:
 
-1. Quit the app (menu bar → **Quit WisprClone**).
-2. In Xcode, click Play ▶ again.
+1. Menu bar → **Quit WisprClone**.
+2. In Xcode, press **Play ▶** again.
 
-In Preferences you can also click **Request Missing…** then **Refresh Status**.
-
----
-
-## Step 6 — Try dictation (first successful use)
-
-1. Open **Notes** (or any app where you can type).
-2. Click inside a note so the cursor is blinking.
-3. Press together:
-
-   **Command + Shift + Space**
-
-   (⌘ ⇧ Space)
-
-   Alternate: **double-tap the Left Command key** (the ⌘ key on the left side of the space bar).
-
-4. A small floating panel should appear near the bottom of the screen (“Listening…”).
-5. Speak normally for as long as you need. Pauses do not stop recording.
-6. Tap the **Left Command key once** to stop and transcribe.
-7. The panel may show Transcribing → Formatting → Done.
-8. Your words should appear in Notes.
-
-The **first** transcription may be slow while the speech model downloads. Later uses are faster.
+You can also open **Preferences** in the app and use **Open Settings** / **Refresh Status**.
 
 ---
 
-## Everyday use (after the first setup)
+## Step 7 — Try dictation
 
-You do **not** need to rebuild every day, but while developing from source you usually:
+1. Open **Notes** (or any app with a text field).
+2. Click so the cursor is blinking where you want text.
+3. **Start:** double‑tap the **fn** key  
+   *(or press **Command + Shift + Space** once to toggle)*
+4. A small floating bar should appear (“Listening”).
+5. Speak normally. Pauses do **not** stop recording.
+6. **Stop:** tap **fn** once  
+   *(or **Command + Shift + Space** again)*
+7. Wait for Thinking → Refining → Writing → Done.
+8. Your words should appear at the cursor.
 
-1. Open `WisprClone.xcodeproj` in Xcode.
-2. Press **Command + R** (Play).
-3. Double-tap **Left ⌘** to start, then tap **Left ⌘** once to stop.  
-   You can also use **⌘⇧Space** to toggle recording.
+The **first** transcription can be slow while the speech model finishes preparing. Later uses are faster. Short phrases may still take a few seconds; longer speech often feels quicker because work starts while you talk.
 
-To stop the app: menu bar waveform → **Quit WisprClone**.
+**Tip:** Keep the cursor in the other app (Notes, Slack, etc.). Don’t click the Wispr overlay before paste finishes.
 
 ---
 
-## Optional: local cleaning with Ollama
+## Everyday use (after setup)
 
-If you want formatting **without** sending text to Groq/OpenAI:
+| Want to… | Do this |
+|---|---|
+| Start the app | Open `WisprClone.xcodeproj` → Play ▶ (**⌘R**) |
+| Start dictation | Double‑tap **fn** (or **⌘⇧Space**) |
+| Stop dictation | Tap **fn** once (or **⌘⇧Space**) |
+| Open settings | Menu bar **Wispr** → Preferences… |
+| Quit | Menu bar **Wispr** → Quit |
 
-1. Install [Ollama](https://ollama.com) from their website.
+You do not need to rebuild every day unless code changed — but while using the Xcode workflow, you usually press **Play** each time you want the app running.
+
+---
+
+## Optional: keep formatting fully on your Mac (Ollama)
+
+1. Install [Ollama](https://ollama.com).
 2. Open **Terminal** and run:
 
    ```bash
@@ -195,59 +196,97 @@ If you want formatting **without** sending text to Groq/OpenAI:
    ```
 
 3. Leave Ollama running.
-4. In WisprClone Preferences, set Formatting to **Local Only** or leave **Auto Fallback**.
-
-If Ollama is off, Auto Fallback will try Groq, then OpenAI.
+4. In WisprClone Preferences, set formatting to **Local Only** (or **Auto Fallback**, which can try local after cloud).
 
 ---
 
 ## If something goes wrong
 
-### “I don’t see the menu bar icon”
+### No menu bar icon
+- Confirm Play ▶ succeeded.
+- Check the menu bar **»** overflow.
+- Quit and run again with **⌘R**.
 
-- Make sure you pressed Play in Xcode and the build succeeded.
-- Check the menu bar overflow (» chevron) on smaller screens / with notch.
-- Quit and run again with Command + R.
-
-### “Shortcut does nothing”
-
-- Enable **Input Monitoring** for the app.
+### Shortcut does nothing
+- Enable **Input Monitoring**.
 - Quit and relaunch after granting it.
-- Try double-tap **Right** ⌘ (not the left one).
+- Use menu **Start Dictation** as a workaround.
+- Try **⌘⇧Space**.
 
-### “It listens but nothing is typed”
-
+### It listens but nothing is typed
 - Enable **Accessibility**.
-- Click into a text field first (cursor must be active).
-- Check Preferences for error messages / API keys.
+- Click into a text field first.
+- Check Preferences for missing API keys / errors.
 
-### “Microphone Unavailable”
-
+### Microphone unavailable
 - Enable **Microphone** in System Settings.
-- Check the Mac isn’t using the mic exclusively in another app.
-- Try unplugging/replugging a USB headset.
+- Close other apps that might lock the mic.
 
-### Xcode is confusing / red errors
-
-- Install the newest **Xcode** from the App Store.
+### Xcode shows red errors
+- Update Xcode from the App Store.
 - **File → Packages → Resolve Package Versions**.
-- Ask someone technical to open the **Issue Navigator** (triangle icon) and read the first red error.
+- Ask someone technical to read the first error in the Issue navigator.
 
 ---
 
-## Quick reference card
+## Privacy & where your data lives
 
-| Want to… | Do this |
+### What stays on your MacBook
+
+By default, WisprClone is designed to be **local‑first**:
+
+- **Microphone audio** is recorded and processed on your machine for transcription (WhisperKit / on‑device Apple Speech).
+- **Whisper models** download into your Mac’s Application Support folder and stay there.
+- **API keys** you paste are stored in your Mac’s **Keychain** (and optionally a local `.env` file you control).
+- **Recent transcript history** in Preferences is stored locally on your Mac.
+- Temporary audio files are written under your user temp folder and removed after a session.
+
+WisprClone does **not** require an account with this open‑source project, and the GitHub repo does not receive your audio or keys.
+
+### When something can leave your Mac
+
+If you enable **Groq** or **OpenAI** formatting, the **text transcript** (not the raw audio file, in the normal flow) is sent to that provider over the internet so it can clean up wording.  
+Their privacy policies apply for that step.
+
+If you use **Local Only (Ollama)** or skip cloud formatting, that cleanup step stays on your machine.
+
+### How to stay as private as possible
+
+1. Prefer **WhisperKit** for speech (default).
+2. Set formatting to **Local Only** with Ollama, or avoid cloud keys entirely.
+3. Never commit `.env`, never paste keys into GitHub Issues or chat screenshots.
+4. Review **System Settings → Privacy & Security** so only apps you trust have Microphone / Accessibility / Input Monitoring.
+
+---
+
+## Disclaimer — security & risk awareness
+
+This software is provided **as‑is**, for personal and educational use. It is **not** a notarized consumer product from Apple’s App Store unless someone separately signs and notarizes a release build for you.
+
+Please understand:
+
+1. **Powerful permissions** — Accessibility and Input Monitoring can, in general, allow an app to observe keyboard activity and control other apps. Only install and run builds you trust, from a source you trust (this repository / a person you trust).
+2. **Development builds** — Running from Xcode or an ad‑hoc `/Applications` copy is normal for open‑source Mac tools, but it is not the same as Apple‑notarized App Store software. macOS may warn you the first time you open an unsigned or locally signed binary.
+3. **API keys are secrets** — Anyone with your Groq/OpenAI key can use your quota. Treat keys like passwords. Rotate them if they leak.
+4. **Cloud formatting risk** — Sending transcripts to a third‑party LLM can expose sensitive content (passwords, medical details, private messages). Do not dictate secrets if cloud formatting is on.
+5. **No warranty** — Authors and contributors are not responsible for data loss, unexpected pastes into the wrong app, API charges, or security incidents arising from misuse, misconfiguration, or running untrusted builds.
+6. **Your responsibility** — Keep macOS updated, grant the minimum permissions you need, and quit the app when you are not using it if you want to reduce always‑on hotkey exposure.
+
+### Bottom line
+
+Used as intended with **local transcription** and careful control of cloud formatting, WisprClone keeps your **voice processing and keys on your own MacBook**. Cloud cleanup is optional and explicit. Permissions are powerful on purpose (global dictation), so treat the app like any other trusted system utility: install carefully, configure deliberately, and do not share secrets in dictated text when cloud LLMs are enabled.
+
+---
+
+## Quick reference
+
+| Action | Shortcut / place |
 |---|---|
-| Start the app | Open Xcode → Play ▶ (⌘R) |
-| Dictate | Click a text field → double-tap **Left ⌘** → speak → tap **Left ⌘** |
-| Open settings | Menu bar waveform → Preferences… |
-| Quit | Menu bar waveform → Quit |
-| Edit API keys | Edit `.env` or Preferences → API key fields |
+| Start listening | Double‑tap **fn** |
+| Stop & process | Tap **fn** once |
+| Toggle | **⌘⇧Space** |
+| Preferences | Menu bar **Wispr** → Preferences… |
+| Start without hotkey | Menu bar **Wispr** → Start Dictation |
+| Project on GitHub | [khandelwalakshat50/WhisprClone](https://github.com/khandelwalakshat50/WhisprClone) |
 
----
-
-## Privacy reminder
-
-- Your `.env` file holds secret keys — treat it like a password.
-- Do not screenshot Preferences with keys visible and share that online.
+For deeper technical detail (architecture, signing, troubleshooting for developers), see **[PROJECT_HANDBOOK.md](PROJECT_HANDBOOK.md)** and **[README.md](README.md)**.

@@ -18,11 +18,11 @@ final class OverlayPresentationModel: ObservableObject {
     }
 
     func updateAudioLevel(rms: Float) {
-        let normalized = min(max((CGFloat(rms) - 0.003) * 22, 0.04), 1)
-        // Fast attack, gentle decay gives the ribbon a natural, confident feel.
+        // Slightly more sensitive mapping so quiet laptop mics still move the ribbon.
+        let normalized = min(max((CGFloat(rms) - 0.001) * 28, 0.04), 1)
         audioLevel = normalized > audioLevel
-            ? audioLevel * 0.28 + normalized * 0.72
-            : audioLevel * 0.82 + normalized * 0.18
+            ? audioLevel * 0.22 + normalized * 0.78
+            : audioLevel * 0.75 + normalized * 0.25
     }
 
     func resetAudioLevel() {
@@ -90,6 +90,7 @@ final class OverlayManager {
 
         handleStateChange(recordingState.state)
         logger.info("Overlay manager started")
+        DiagnosticLog.write("OverlayManager.start complete, observers wired, panel=\(panel != nil)")
     }
 
     func stop() {
@@ -121,6 +122,7 @@ final class OverlayManager {
 
     private func handleStateChange(_ state: RecordingState) {
         presentation.update(state: state)
+        DiagnosticLog.write("overlay state → \(state)")
 
         guard state.shouldPresentOverlay else {
             dismissTask?.cancel()
@@ -166,6 +168,9 @@ final class OverlayManager {
         let hosting = NSHostingView(rootView: rootView)
         hosting.frame = panel.contentView?.bounds ?? .zero
         hosting.autoresizingMask = [.width, .height]
+        // Prevent a light system rect from showing behind the capsule.
+        hosting.wantsLayer = true
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = hosting
 
         self.panel = panel
@@ -173,55 +178,51 @@ final class OverlayManager {
     }
 
     private func showPanel() {
-        // Recreate if somehow torn down; also ensures a fresh Space attachment
-        // after long idle periods.
         if panel == nil {
             buildPanel()
         }
-        guard let panel else { return }
-
-        let wasHiding = isHiding
-        isHiding = false
-
-        // Force macOS to re-evaluate which Space owns this window.
-        // orderOut → reconfigure → orderFrontRegardless is the reliable way to
-        // leave the Desktop Space and join a full-screen Chrome Space.
-        if panel.isVisible && wasHiding == false && panel.alphaValue >= 0.95 {
-            panel.applyFloatingAppearance()
-            position(panel)
-            panel.orderFrontRegardless()
+        guard let panel else {
+            DiagnosticLog.write("overlay showPanel FAILED — panel nil")
             return
         }
 
-        panel.orderOut(nil)
-        panel.applyFloatingAppearance()
-        position(panel)
+        isHiding = false
+        // Refresh SwiftUI root in case hosting view got stuck.
+        let rootView = StatusView(model: presentation, onStopRecording: onStopRecording)
+        if let hosting = hostingView {
+            hosting.rootView = rootView
+            hosting.wantsLayer = true
+            hosting.layer?.backgroundColor = NSColor.clear.cgColor
+        } else {
+            let hosting = NSHostingView(rootView: rootView)
+            hosting.frame = NSRect(origin: .zero, size: NSSize(width: Constants.Overlay.width, height: Constants.Overlay.height))
+            hosting.autoresizingMask = [.width, .height]
+            hosting.wantsLayer = true
+            hosting.layer?.backgroundColor = NSColor.clear.cgColor
+            panel.contentView = hosting
+            hostingView = hosting
+        }
 
-        let targetFrame = panel.frame
-        let initialFrame = targetFrame.insetBy(dx: 3, dy: 2)
-        panel.setFrame(initialFrame, display: false)
-        panel.alphaValue = 0
+        panel.applyFloatingAppearance()
+        // Re-assert level after any AppKit side effects.
+        panel.level = .screenSaver
+        position(panel)
+        panel.alphaValue = 1
         panel.orderFrontRegardless()
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Constants.Overlay.fadeDuration
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
-            panel.animator().alphaValue = 1
-            panel.animator().setFrame(targetFrame, display: true)
-        }
-        logger.debug("Overlay shown on \(self.activeScreen()?.localizedName ?? "unknown", privacy: .public)")
+        DiagnosticLog.write(
+            "overlay showPanel frame=\(NSStringFromRect(panel.frame)) visible=\(panel.isVisible) level=\(panel.level.rawValue) screen=\(activeScreen()?.localizedName ?? "?")"
+        )
+        logger.info("Overlay shown")
     }
 
     private func hidePanel() {
         guard let panel, panel.isVisible else { return }
-        let originalFrame = panel.frame
-        let dissolvedFrame = originalFrame.insetBy(dx: 4, dy: 2)
         isHiding = true
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = Constants.Overlay.fadeDuration
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 0.7, 0.2)
             panel.animator().alphaValue = 0
-            panel.animator().setFrame(dissolvedFrame, display: true)
         }, completionHandler: { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
@@ -229,7 +230,6 @@ final class OverlayManager {
                 self.isHiding = false
                 panel.orderOut(nil)
                 panel.alphaValue = 1
-                panel.setFrame(originalFrame, display: false)
                 self.logger.debug("Overlay hidden")
             }
         })
@@ -258,7 +258,7 @@ final class OverlayManager {
         panel.setFrame(NSRect(origin: NSPoint(x: x, y: y), size: size), display: false)
     }
 
-    /// Prefer the screen under the mouse (where the user is working), then main.
+    /// Prefer the screen under the mouse, then the main screen.
     private func activeScreen() -> NSScreen? {
         let mouse = NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) {

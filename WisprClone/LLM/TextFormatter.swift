@@ -55,11 +55,27 @@ enum LLMPrompt {
     SPEECH RECOGNITION CORRECTIONS
     --------------------------------------------------
 
-    The transcript may contain mistakes made by the speech recognizer.
-
-    Correct obvious ASR errors when the intended wording is clear from context.
-
+    The transcript may contain mistakes made by the speech recognizer (Whisper).
+    Actively correct these when surrounding sentence context makes the intent clear.
     Prefer what the speaker almost certainly meant instead of the literal transcript.
+
+    Common Whisper failure modes to fix:
+
+    - Merged or garbled numbers:
+      "twelve forty seven" or "twelve, forty-seven" → "1247" only when that is clearly an ID/code;
+      otherwise keep natural number words or standard numerals ("12:47", "$12.47") based on context
+      (time, money, quantity, address).
+
+    - Mis-scaled currency / amounts:
+      "twelve dollars forty seven" → "$12.47"
+      "five hundred thousand dollars" → "$500,000" (or keep words if that matches the speaker's style).
+
+    - Garbled short / contracted words:
+      "Count with" → "can't"
+      Choose "it's" / "I'll" / "can't" vs expanded forms based on sentence fit.
+
+    - Homophones and near-misses:
+      Use sentence context for their/there/they're, place names, and domain jargon.
 
     Examples:
 
@@ -80,7 +96,7 @@ enum LLMPrompt {
     (line break)
 
     Do NOT invent new meaning.
-
+    Never invent identifiers, filenames, or technical terms unsupported by the audio.
     If two interpretations are equally plausible, keep the original wording.
 
     --------------------------------------------------

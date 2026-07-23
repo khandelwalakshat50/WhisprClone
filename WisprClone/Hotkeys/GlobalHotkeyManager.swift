@@ -6,7 +6,7 @@ import Carbon.HIToolbox
 ///
 /// Supports:
 /// 1. ⌘⇧Space to toggle recording
-/// 2. Double-tap Left Command to begin, then tap it once to stop
+/// 2. Double-tap Fn to begin; single-tap Fn to stop
 final class GlobalHotkeyManager: @unchecked Sendable {
     enum Action: Equatable, Sendable {
         case toggle
@@ -26,10 +26,12 @@ final class GlobalHotkeyManager: @unchecked Sendable {
     private var globalMonitor: Any?
     private var localMonitor: Any?
 
-    private var lastLeftCommandTap: CFAbsoluteTime = 0
     private let doubleTapInterval: CFAbsoluteTime = 0.4
-    private var leftCommandWasDown = false
     private var lastFire: (action: Action, time: CFAbsoluteTime)?
+
+    private var lastFnTap: CFAbsoluteTime = 0
+    private var fnWasDown = false
+    private static let fnKeyCode = Int64(kVK_Function) // 63
 
     init(onTrigger: @escaping TriggerHandler) {
         self.onTrigger = onTrigger
@@ -89,7 +91,6 @@ final class GlobalHotkeyManager: @unchecked Sendable {
             return manager.handle(type: type, event: event)
         }
 
-        // Prefer session tap; fall back to HID tap if unavailable.
         let tap =
             CGEvent.tapCreate(
                 tap: .cgSessionEventTap,
@@ -114,13 +115,14 @@ final class GlobalHotkeyManager: @unchecked Sendable {
         }
 
         eventTap = tap
-        removeNSEventFallbackOnMain()
+        // Keep NSEvent monitors as a backup — Input Monitoring taps can drop
+        // modifier-only events (Fn) on some MacBooks.
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         runLoopSource = source
         tapRunLoop = CFRunLoopGetCurrent()
         CFRunLoopAddSource(tapRunLoop, source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        AppLogger.hotkeys.info("CGEventTap installed")
+        AppLogger.hotkeys.info("CGEventTap installed (NSEvent fallback kept)")
         CFRunLoopRun()
     }
 
@@ -139,9 +141,10 @@ final class GlobalHotkeyManager: @unchecked Sendable {
                 return nil
             }
         case .flagsChanged:
-            if let action = handleLeftCommand(
-                keyCode: event.getIntegerValueField(.keyboardEventKeycode),
-                commandDown: event.flags.contains(.maskCommand)
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            if let action = handleFnKey(
+                keyCode: keyCode,
+                fnDown: event.flags.contains(.maskSecondaryFn)
             ) {
                 fire(action)
             }
@@ -187,8 +190,10 @@ final class GlobalHotkeyManager: @unchecked Sendable {
                 fire(.toggle)
             }
         case .flagsChanged:
-            let commandDown = event.modifierFlags.contains(.command)
-            if let action = handleLeftCommand(keyCode: Int64(event.keyCode), commandDown: commandDown) {
+            if let action = handleFnKey(
+                keyCode: Int64(event.keyCode),
+                fnDown: event.modifierFlags.contains(.function)
+            ) {
                 fire(action)
             }
         default:
@@ -210,51 +215,36 @@ final class GlobalHotkeyManager: @unchecked Sendable {
         return hasCommand && hasShift && !hasOption && !hasControl
     }
 
-    private func handleLeftCommand(keyCode: Int64, commandDown: Bool) -> Action? {
-        guard keyCode == Int64(kVK_Command) else { return nil }
+    /// Double-tap Fn → begin; single-tap Fn → stop.
+    private func handleFnKey(keyCode: Int64, fnDown: Bool) -> Action? {
+        guard keyCode == Self.fnKeyCode else { return nil }
 
-        let wasDown = leftCommandWasDown
-        leftCommandWasDown = commandDown
+        let previouslyDown = fnWasDown
+        fnWasDown = fnDown
 
         // Rising edge only.
-        guard commandDown, !wasDown else { return nil }
+        guard fnDown, !previouslyDown else { return nil }
 
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastLeftCommandTap <= doubleTapInterval {
-            lastLeftCommandTap = 0
+        if now - lastFnTap <= doubleTapInterval {
+            lastFnTap = 0
             return .begin
         }
 
-        lastLeftCommandTap = now
+        lastFnTap = now
         return .stop
     }
 
     private func fire(_ action: Action) {
-        // Suppress only near-simultaneous duplicates while the event tap
-        // replaces the NSEvent fallback. A normal double-tap must get through.
+        // Debounce near-simultaneous duplicates from event-tap + NSEvent.
         let now = CFAbsoluteTimeGetCurrent()
         if let lastFire,
-           now - lastFire.time < 0.05,
+           now - lastFire.time < 0.08,
            lastFire.action == action {
             return
         }
         lastFire = (action, now)
         AppLogger.hotkeys.info("Hotkey triggered: \(String(describing: action), privacy: .public)")
         onTrigger(action)
-    }
-
-    private func removeNSEventFallbackOnMain() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if let globalMonitor {
-                NSEvent.removeMonitor(globalMonitor)
-                self.globalMonitor = nil
-            }
-            if let localMonitor {
-                NSEvent.removeMonitor(localMonitor)
-                self.localMonitor = nil
-            }
-            AppLogger.hotkeys.info("CGEventTap active; NSEvent fallback removed")
-        }
     }
 }

@@ -110,6 +110,15 @@ struct SettingsView: View {
                 }
                 TextField("Whisper model", text: $store.configuration.whisperModel)
                     .disabled(store.configuration.speechEngine != .whisperKit)
+                TextField(
+                    "Vocabulary bias (comma-separated)",
+                    text: $store.configuration.whisperVocabularyBias,
+                    prompt: Text("entrepreneur, Worcestershire, OpenWhisper…")
+                )
+                .disabled(store.configuration.speechEngine != .whisperKit)
+                Text("Optional words Whisper should prefer when they sound ambiguous.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Formatting") {
@@ -117,7 +126,7 @@ struct SettingsView: View {
                     Text("Local Only (Ollama)").tag(FormattingMode.localOnly)
                     Text("Groq Only").tag(FormattingMode.groqOnly)
                     Text("OpenAI Only").tag(FormattingMode.openAIOnly)
-                    Text("Auto Fallback (Ollama → Groq → OpenAI)").tag(FormattingMode.autoFallback)
+                    Text("Auto Fallback (Groq → OpenAI → Ollama)").tag(FormattingMode.autoFallback)
                 }
                 TextField("Ollama model", text: $store.configuration.ollamaModel)
                 TextField("Groq model", text: $store.configuration.groqModel)
@@ -192,8 +201,8 @@ struct SettingsView: View {
 
             Section("Hotkeys") {
                 LabeledContent("Toggle dictation", value: "⌘⇧Space")
-                LabeledContent("Start dictation", value: "Double-tap Left ⌘")
-                LabeledContent("Stop recording", value: "Tap Left ⌘ once")
+                LabeledContent("Start dictation", value: "Double-tap fn")
+                LabeledContent("Stop recording", value: "Tap fn once")
             }
 
             Section("Permissions") {
@@ -327,6 +336,19 @@ private struct HistoryRow: View {
             .foregroundStyle(.tertiary)
             .labelStyle(.titleAndIcon)
 
+            if let timing = entry.timing {
+                Text(Self.timingLabel(timing))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            if let note = entry.delayNote, !note.isEmpty {
+                Label(note, systemImage: "hare")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Text(entry.text)
                 .font(.callout)
                 .textSelection(.enabled)
@@ -346,6 +368,23 @@ private struct HistoryRow: View {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             copied = false
         }
+    }
+
+    private static func timingLabel(_ timing: TranscriptHistoryStore.TimingBreakdown) -> String {
+        var parts: [String] = []
+        if let t = timing.transcriptionSeconds {
+            parts.append(String(format: "Transcribe %.1fs", t))
+        }
+        if let t = timing.formattingSeconds {
+            parts.append(String(format: "Format %.1fs", t))
+        }
+        if let t = timing.injectionSeconds {
+            parts.append(String(format: "Paste %.1fs", t))
+        }
+        if let t = timing.processingSeconds {
+            parts.append(String(format: "Total %.1fs", t))
+        }
+        return parts.joined(separator: " · ")
     }
 
     private static func durationLabel(_ seconds: Double) -> String {

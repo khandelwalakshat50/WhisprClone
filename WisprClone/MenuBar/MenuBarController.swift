@@ -36,14 +36,22 @@ final class MenuBarController: NSObject {
             button.appearsDisabled = false
         }
 
+        // Keep the item out of the overflow menu when possible.
+        if #available(macOS 11.0, *) {
+            item.behavior = [.removalAllowed]
+            item.autosaveName = "WisprCloneStatusItem"
+        }
+
         item.menu = buildMenu()
+        AppLogger.menuBar.info("Status item installed (look for “Wispr” in the menu bar)")
+        // Force a redraw — occasionally the first install paints blank.
+        item.isVisible = true
+        statusItem = item
 
         stateObserverID = recordingState.addObserver { [weak self] state in
             self?.applyStatusAppearance(for: state)
         }
         applyStatusAppearance(for: recordingState.state)
-
-        AppLogger.menuBar.info("Status item installed (look for “Wispr” in the menu bar)")
     }
 
     func tearDown() {
@@ -86,7 +94,6 @@ final class MenuBarController: NSObject {
         preferences.isEnabled = true
         menu.addItem(preferences)
 
-        #if DEBUG
         menu.addItem(.separator())
         let preview = NSMenuItem(
             title: "Preview Overlay",
@@ -96,7 +103,6 @@ final class MenuBarController: NSObject {
         preview.target = self
         preview.isEnabled = true
         menu.addItem(preview)
-        #endif
 
         menu.addItem(.separator())
 
@@ -125,6 +131,7 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func startDictationClicked(_ sender: Any?) {
+        DiagnosticLog.write("menu Start Dictation clicked")
         startDictationAction()
     }
 
@@ -132,7 +139,6 @@ final class MenuBarController: NSObject {
         preferencesAction()
     }
 
-    #if DEBUG
     @objc private func previewOverlayClicked(_ sender: Any?) {
         let next: RecordingState
         switch recordingState.state {
@@ -147,10 +153,10 @@ final class MenuBarController: NSObject {
         case .failure:
             next = .idle
         }
+        DiagnosticLog.write("Preview Overlay → \(next)")
         AppLogger.menuBar.debug("Overlay preview → \(String(describing: next), privacy: .public)")
         recordingState.update(next)
     }
-    #endif
 
     @objc private func aboutClicked(_ sender: Any?) {
         NSApp.activate(ignoringOtherApps: true)

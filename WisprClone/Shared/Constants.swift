@@ -11,12 +11,33 @@ enum Constants {
     }
 
     enum Audio {
-        /// Cumulative silence after speech before auto-stop (Phase 6).
+        /// Cumulative silence after speech before a live ASR chunk is committed
+        /// (and before UI treats the utterance as paused). Recording itself
+        /// still ends only via the manual stop hotkey.
         static let silenceDurationMilliseconds: UInt64 = 700
         /// Emergency cap only; normal recording ends via the manual stop hotkey.
-        /// Longer clips take proportionally longer to transcribe (Whisper runs
-        /// once on the full recording when you stop).
         static let maxListenSeconds: TimeInterval = 1800 // 30 minutes
+
+        /// WhisperKit expects 16 kHz mono floats.
+        static let whisperSampleRate: Double = 16_000
+        /// Force-commit a live chunk after this much buffered speech (no pause).
+        /// Lower than before so medium utterances overlap Whisper with speaking.
+        static let liveChunkMaxSeconds: TimeInterval = 5
+        /// Ignore silence commits shorter than this (avoids tiny empty chunks).
+        static let liveChunkMinSeconds: TimeInterval = 0.55
+        /// Clips shorter than this use fast decode options (no VAD chunking).
+        static let fastDecodeMaxSeconds: TimeInterval = 12
+        /// Keep this much audio at the end of a mid-speech chunk so the next
+        /// window still hears word boundaries (reduces “it's” / “I'll” garble).
+        static let liveChunkOverlapSeconds: TimeInterval = 0.45
+        /// Max tokens for vocabulary / prior-text prompt bias.
+        static let whisperPromptTokenLimit: Int = 120
+    }
+
+    enum Formatting {
+        /// Split long transcripts into sentence-aware pieces before the LLM
+        /// so latency stays bounded for lengthy dictation.
+        static let maxChunkCharacters: Int = 2_200
     }
 
     enum LLM {
@@ -37,14 +58,14 @@ enum Constants {
     }
 
     enum Overlay {
-        static let width: CGFloat = 244
-        static let height: CGFloat = 58
-        static let cornerRadius: CGFloat = 19
+        static let width: CGFloat = OverlayTheme.panelWidth
+        static let height: CGFloat = OverlayTheme.panelHeight
+        static let cornerRadius: CGFloat = OverlayTheme.cornerRadius
         /// Distance from the bottom of the visible screen frame.
-        static let bottomMargin: CGFloat = 48
-        static let fadeDuration: TimeInterval = 0.36
+        static let bottomMargin: CGFloat = 52
+        static let fadeDuration: TimeInterval = 0.48
         /// Auto-return to `.idle` after success / failure so the HUD dismisses.
-        static let autoDismissSeconds: TimeInterval = 0.95
+        static let autoDismissSeconds: TimeInterval = 1.05
     }
 
     enum Build {

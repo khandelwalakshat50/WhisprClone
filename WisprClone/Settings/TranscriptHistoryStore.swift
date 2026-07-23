@@ -8,6 +8,24 @@ import Foundation
 /// the user explicitly requested for manual copy/paste recovery.
 @MainActor
 final class TranscriptHistoryStore: ObservableObject {
+    /// Per-stage timings (seconds) measured after the user stops speaking.
+    struct TimingBreakdown: Codable, Sendable, Equatable {
+        var transcriptionSeconds: Double?
+        var formattingSeconds: Double?
+        var injectionSeconds: Double?
+        /// Stop → paste (excludes time spent recording).
+        var processingSeconds: Double?
+
+        var slowestStage: String? {
+            let stages: [(String, Double)] = [
+                ("Transcription", transcriptionSeconds ?? 0),
+                ("Formatting", formattingSeconds ?? 0),
+                ("Paste", injectionSeconds ?? 0)
+            ].filter { $0.1 > 0 }
+            return stages.max(by: { $0.1 < $1.1 })?.0
+        }
+    }
+
     struct Entry: Codable, Identifiable, Sendable {
         let id: UUID
         let text: String
@@ -17,6 +35,9 @@ final class TranscriptHistoryStore: ObservableObject {
         let transcriptionModel: String?
         /// Seconds from the start of recording until text was pasted.
         let durationSeconds: Double?
+        let timing: TimingBreakdown?
+        /// Human-readable explanation of what made this run slow (or notes).
+        let delayNote: String?
 
         init(
             id: UUID = UUID(),
@@ -24,7 +45,9 @@ final class TranscriptHistoryStore: ObservableObject {
             timestamp: Date = .now,
             provider: LLMProvider? = nil,
             transcriptionModel: String? = nil,
-            durationSeconds: Double? = nil
+            durationSeconds: Double? = nil,
+            timing: TimingBreakdown? = nil,
+            delayNote: String? = nil
         ) {
             self.id = id
             self.text = text
@@ -32,6 +55,8 @@ final class TranscriptHistoryStore: ObservableObject {
             self.provider = provider
             self.transcriptionModel = transcriptionModel
             self.durationSeconds = durationSeconds
+            self.timing = timing
+            self.delayNote = delayNote
         }
     }
 
@@ -58,6 +83,8 @@ final class TranscriptHistoryStore: ObservableObject {
         provider: LLMProvider? = nil,
         transcriptionModel: String? = nil,
         durationSeconds: Double? = nil,
+        timing: TimingBreakdown? = nil,
+        delayNote: String? = nil,
         at date: Date = .now
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,7 +96,9 @@ final class TranscriptHistoryStore: ObservableObject {
                 timestamp: date,
                 provider: provider,
                 transcriptionModel: transcriptionModel,
-                durationSeconds: durationSeconds
+                durationSeconds: durationSeconds,
+                timing: timing,
+                delayNote: delayNote
             ),
             at: 0
         )
@@ -85,8 +114,12 @@ final class TranscriptHistoryStore: ObservableObject {
         defaults.removeObject(forKey: storageKey)
     }
 
-    /// Sets duration on the most recent entry (called after injection completes or fails).
-    func updateLatestDuration(_ durationSeconds: Double) {
+    /// Fills in duration / timing / delay note on the most recent entry after paste finishes.
+    func updateLatestMetrics(
+        durationSeconds: Double?,
+        timing: TimingBreakdown?,
+        delayNote: String?
+    ) {
         guard !entries.isEmpty else { return }
         let latest = entries[0]
         entries[0] = Entry(
@@ -95,7 +128,9 @@ final class TranscriptHistoryStore: ObservableObject {
             timestamp: latest.timestamp,
             provider: latest.provider,
             transcriptionModel: latest.transcriptionModel,
-            durationSeconds: durationSeconds
+            durationSeconds: durationSeconds ?? latest.durationSeconds,
+            timing: timing ?? latest.timing,
+            delayNote: delayNote ?? latest.delayNote
         )
         save()
     }

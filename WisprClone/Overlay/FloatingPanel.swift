@@ -16,7 +16,8 @@ final class FloatingPanel: NSPanel {
 
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = true
+        // AppKit window shadow is rectangular — soft glow comes from SwiftUI instead.
+        hasShadow = false
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
         isMovable = false
@@ -25,33 +26,23 @@ final class FloatingPanel: NSPanel {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         worksWhenModal = true
-
-        applyFloatingAppearance()
-
-        // The non-activating panel preserves focus in the target app while
-        // allowing the compact stop control to remain tactile.
         ignoresMouseEvents = false
+
+        // Set floating BEFORE level — toggling `isFloatingPanel` resets level
+        // to `.floating` (raw 3), which sits under normal app windows.
+        isFloatingPanel = true
+        applyFloatingAppearance()
     }
 
-    /// Re-assert Space membership. Must be called every time the panel is
-    /// ordered front — otherwise macOS can leave it stranded on the Desktop
-    /// Space while Chrome (or any full-screen app) owns the active Space.
     func applyFloatingAppearance() {
-        // Do NOT use `.stationary` — it pins the window to the Space where it
-        // was created (usually Desktop), which is exactly the "only on desktop"
-        // failure mode.
-        //
-        // `.moveToActiveSpace` pulls the HUD onto whatever Space is frontmost
-        // when we order front, including full-screen Spaces.
-        // `.fullScreenAuxiliary` is required to appear over a full-screen app.
-        // `.canJoinAllSpaces` keeps it visible across normal Spaces too.
+        hidesOnDeactivate = false
+        isFloatingPanel = true
+        // MUST be after isFloatingPanel — that property resets level to 3.
+        level = .screenSaver
         collectionBehavior = [
             .canJoinAllSpaces,
-            .moveToActiveSpace,
             .fullScreenAuxiliary,
-            .ignoresCycle,
-            .transient
+            .ignoresCycle
         ]
-        level = .screenSaver
     }
 }

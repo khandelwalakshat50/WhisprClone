@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         launchInstant = .now
         AppLogger.app.info("Application finished launching")
+        DiagnosticLog.write("app launched from \(Bundle.main.bundlePath)")
 
         applyTheme(configurationStore.configuration.theme)
 
@@ -45,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         overlay.start()
         overlayManager = overlay
+        DiagnosticLog.write("AppDelegate overlayManager retained")
 
         settingsController = SettingsWindowController(
             store: configurationStore,
@@ -67,8 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.start()
         dictationCoordinator = coordinator
 
-        // Defer permission nudge so the menu bar is already visible.
+        // Menu-bar apps look "broken" if nothing visible appears on launch.
+        // Open Preferences so double-clicking the app always shows a window.
         DispatchQueue.main.async { [weak self] in
+            self?.showPreferences()
             self?.nudgePermissionsIfNeeded()
         }
 
@@ -76,6 +80,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let ms = AppLogger.elapsedMilliseconds(since: launchInstant)
             AppLogger.app.info("Startup complete in \(ms, format: .fixed(precision: 1)) ms")
         }
+    }
+
+    /// Finder / Dock re-click while already running.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPreferences()
+        return true
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -142,6 +152,7 @@ final class RecordingStateStore {
     private(set) var state: RecordingState = .idle {
         didSet {
             guard state != oldValue else { return }
+            DiagnosticLog.write("RecordingStateStore \(oldValue) → \(state) observers=\(observers.count)")
             for observer in observers.values {
                 observer(state)
             }
@@ -154,6 +165,7 @@ final class RecordingStateStore {
     func addObserver(_ handler: @escaping (RecordingState) -> Void) -> UUID {
         let id = UUID()
         observers[id] = handler
+        DiagnosticLog.write("RecordingStateStore addObserver → \(observers.count) total")
         return id
     }
 

@@ -34,6 +34,8 @@ struct Configuration: Equatable, Sendable {
     var openAIModel: String
     var groqModel: String
     var whisperModel: String
+    /// Comma / newline separated words to bias Whisper (names, jargon, places).
+    var whisperVocabularyBias: String
     var temperature: Double
     var ollamaTimeout: TimeInterval
     var theme: AppTheme
@@ -45,6 +47,7 @@ struct Configuration: Equatable, Sendable {
         openAIModel: "gpt-4o-mini",
         groqModel: Constants.LLM.defaultGroqModel,
         whisperModel: "base",
+        whisperVocabularyBias: "",
         temperature: 0.2,
         ollamaTimeout: Constants.LLM.ollamaTimeoutSeconds,
         theme: .system

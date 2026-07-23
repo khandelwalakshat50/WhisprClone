@@ -24,6 +24,7 @@ final class ConfigurationStore: ObservableObject {
         static let openAIModel = "openAIModel"
         static let groqModel = "groqModel"
         static let whisperModel = "whisperModel"
+        static let whisperVocabularyBias = "whisperVocabularyBias"
         static let temperature = "temperature"
         static let ollamaTimeout = "ollamaTimeout"
         static let theme = "theme"
@@ -108,6 +109,7 @@ final class ConfigurationStore: ObservableObject {
         defaults.set(config.openAIModel, forKey: Keys.openAIModel)
         defaults.set(config.groqModel, forKey: Keys.groqModel)
         defaults.set(config.whisperModel, forKey: Keys.whisperModel)
+        defaults.set(config.whisperVocabularyBias, forKey: Keys.whisperVocabularyBias)
         defaults.set(config.temperature, forKey: Keys.temperature)
         defaults.set(config.ollamaTimeout, forKey: Keys.ollamaTimeout)
         defaults.set(config.theme.rawValue, forKey: Keys.theme)
@@ -134,6 +136,9 @@ final class ConfigurationStore: ObservableObject {
         }
         if let model = defaults.string(forKey: Keys.whisperModel) {
             config.whisperModel = model
+        }
+        if let bias = defaults.string(forKey: Keys.whisperVocabularyBias) {
+            config.whisperVocabularyBias = bias
         }
         if defaults.object(forKey: Keys.temperature) != nil {
             config.temperature = defaults.double(forKey: Keys.temperature)

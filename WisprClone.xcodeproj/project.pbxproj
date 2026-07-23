@@ -27,6 +27,11 @@
 		B00000000000000000000218 /* FloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000118 /* FloatingPanel.swift */; };
 		B00000000000000000000219 /* OverlayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000119 /* OverlayManager.swift */; };
 		B00000000000000000000220 /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000120 /* StatusView.swift */; };
+		B00000000000000000000240 /* OverlayTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000140 /* OverlayTheme.swift */; };
+		B00000000000000000000241 /* CrystalGlassSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000141 /* CrystalGlassSurface.swift */; };
+		B00000000000000000000242 /* EnergyCoreOrb.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000142 /* EnergyCoreOrb.swift */; };
+		B00000000000000000000243 /* IntelligenceRibbon.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000143 /* IntelligenceRibbon.swift */; };
+		B00000000000000000000244 /* SoftStopControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000144 /* SoftStopControl.swift */; };
 		B00000000000000000000221 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000121 /* PermissionManager.swift */; };
 		B00000000000000000000222 /* EnvLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000122 /* EnvLoader.swift */; };
 		B00000000000000000000223 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000123 /* KeychainStore.swift */; };
@@ -40,8 +45,10 @@
 		B00000000000000000000231 /* AppleSpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000131 /* AppleSpeechRecognizer.swift */; };
 		B00000000000000000000232 /* SpeechRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000132 /* SpeechRecognizer.swift */; };
 		B00000000000000000000233 /* WhisperKitRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000133 /* WhisperKitRecognizer.swift */; };
+		B00000000000000000000245 /* LiveChunkTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000145 /* LiveChunkTranscriber.swift */; };
 		B00000000000000000000234 /* LLMUsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000134 /* LLMUsageStore.swift */; };
 		B00000000000000000000235 /* TranscriptHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000135 /* TranscriptHistoryStore.swift */; };
+		B00000000000000000000236 /* DiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000136 /* DiagnosticLog.swift */; };
 		B00000000000000000000002 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000001 /* Assets.xcassets */; };
 		B00000000000000000000016 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = B00000000000000000000015 /* WhisperKit */; };
 /* End PBXBuildFile section */
@@ -67,6 +74,11 @@
 		B00000000000000000000118 /* FloatingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPanel.swift; sourceTree = "<group>"; };
 		B00000000000000000000119 /* OverlayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayManager.swift; sourceTree = "<group>"; };
 		B00000000000000000000120 /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
+		B00000000000000000000140 /* OverlayTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayTheme.swift; sourceTree = "<group>"; };
+		B00000000000000000000141 /* CrystalGlassSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrystalGlassSurface.swift; sourceTree = "<group>"; };
+		B00000000000000000000142 /* EnergyCoreOrb.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyCoreOrb.swift; sourceTree = "<group>"; };
+		B00000000000000000000143 /* IntelligenceRibbon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntelligenceRibbon.swift; sourceTree = "<group>"; };
+		B00000000000000000000144 /* SoftStopControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftStopControl.swift; sourceTree = "<group>"; };
 		B00000000000000000000121 /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		B00000000000000000000122 /* EnvLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnvLoader.swift; sourceTree = "<group>"; };
 		B00000000000000000000123 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -80,8 +92,10 @@
 		B00000000000000000000131 /* AppleSpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechRecognizer.swift; sourceTree = "<group>"; };
 		B00000000000000000000132 /* SpeechRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognizer.swift; sourceTree = "<group>"; };
 		B00000000000000000000133 /* WhisperKitRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperKitRecognizer.swift; sourceTree = "<group>"; };
+		B00000000000000000000145 /* LiveChunkTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveChunkTranscriber.swift; sourceTree = "<group>"; };
 		B00000000000000000000134 /* LLMUsageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMUsageStore.swift; sourceTree = "<group>"; };
 		B00000000000000000000135 /* TranscriptHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptHistoryStore.swift; sourceTree = "<group>"; };
+		B00000000000000000000136 /* DiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticLog.swift; sourceTree = "<group>"; };
 		B00000000000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B00000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B00000000000000000000004 /* WisprClone.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WisprClone.entitlements; sourceTree = "<group>"; };
@@ -195,6 +209,11 @@
 				B00000000000000000000118 /* FloatingPanel.swift */,
 				B00000000000000000000119 /* OverlayManager.swift */,
 				B00000000000000000000120 /* StatusView.swift */,
+				B00000000000000000000140 /* OverlayTheme.swift */,
+				B00000000000000000000141 /* CrystalGlassSurface.swift */,
+				B00000000000000000000142 /* EnergyCoreOrb.swift */,
+				B00000000000000000000143 /* IntelligenceRibbon.swift */,
+				B00000000000000000000144 /* SoftStopControl.swift */,
 			);
 			path = Overlay;
 			sourceTree = "<group>";
@@ -231,6 +250,7 @@
 			children = (
 				B00000000000000000000126 /* AppError.swift */,
 				B00000000000000000000127 /* AppLogger.swift */,
+				B00000000000000000000136 /* DiagnosticLog.swift */,
 				B00000000000000000000128 /* Configuration.swift */,
 				B00000000000000000000129 /* Constants.swift */,
 				B00000000000000000000130 /* RecordingState.swift */,
@@ -244,6 +264,7 @@
 				B00000000000000000000131 /* AppleSpeechRecognizer.swift */,
 				B00000000000000000000132 /* SpeechRecognizer.swift */,
 				B00000000000000000000133 /* WhisperKitRecognizer.swift */,
+				B00000000000000000000145 /* LiveChunkTranscriber.swift */,
 			);
 			path = Speech;
 			sourceTree = "<group>";
@@ -360,6 +381,11 @@
 				B00000000000000000000218 /* FloatingPanel.swift in Sources */,
 				B00000000000000000000219 /* OverlayManager.swift in Sources */,
 				B00000000000000000000220 /* StatusView.swift in Sources */,
+				B00000000000000000000240 /* OverlayTheme.swift in Sources */,
+				B00000000000000000000241 /* CrystalGlassSurface.swift in Sources */,
+				B00000000000000000000242 /* EnergyCoreOrb.swift in Sources */,
+				B00000000000000000000243 /* IntelligenceRibbon.swift in Sources */,
+				B00000000000000000000244 /* SoftStopControl.swift in Sources */,
 				B00000000000000000000221 /* PermissionManager.swift in Sources */,
 				B00000000000000000000222 /* EnvLoader.swift in Sources */,
 				B00000000000000000000223 /* KeychainStore.swift in Sources */,
@@ -373,8 +399,10 @@
 				B00000000000000000000231 /* AppleSpeechRecognizer.swift in Sources */,
 				B00000000000000000000232 /* SpeechRecognizer.swift in Sources */,
 				B00000000000000000000233 /* WhisperKitRecognizer.swift in Sources */,
+				B00000000000000000000245 /* LiveChunkTranscriber.swift in Sources */,
 				B00000000000000000000234 /* LLMUsageStore.swift in Sources */,
 				B00000000000000000000235 /* TranscriptHistoryStore.swift in Sources */,
+				B00000000000000000000236 /* DiagnosticLog.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

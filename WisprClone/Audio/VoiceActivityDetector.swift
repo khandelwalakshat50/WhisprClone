@@ -9,7 +9,7 @@ import os
 final class VoiceActivityDetector: @unchecked Sendable {
     struct Configuration: Sendable {
         /// RMS below this is treated as silence (linear float amplitude).
-        var silenceThreshold: Float = 0.012
+        var silenceThreshold: Float = 0.006
         /// Required consecutive silence after speech before stop.
         var silenceDuration: TimeInterval = 0.7
         /// Minimum speech duration before silence can end the utterance.
@@ -88,20 +88,37 @@ final class VoiceActivityDetector: @unchecked Sendable {
     // MARK: - RMS
 
     static func rms(of buffer: AVAudioPCMBuffer) -> Float {
-        guard let channelData = buffer.floatChannelData else { return 0 }
         let channelCount = Int(buffer.format.channelCount)
         let frameLength = Int(buffer.frameLength)
         guard channelCount > 0, frameLength > 0 else { return 0 }
 
         var sum: Float = 0
-        for channel in 0..<channelCount {
-            let samples = channelData[channel]
-            for i in 0..<frameLength {
-                let sample = samples[i]
-                sum += sample * sample
+        var count: Float = 0
+
+        if let channelData = buffer.floatChannelData {
+            for channel in 0..<channelCount {
+                let samples = channelData[channel]
+                for i in 0..<frameLength {
+                    let sample = samples[i]
+                    sum += sample * sample
+                }
             }
+            count = Float(frameLength * channelCount)
+        } else if let channelData = buffer.int16ChannelData {
+            let scale: Float = 1.0 / Float(Int16.max)
+            for channel in 0..<channelCount {
+                let samples = channelData[channel]
+                for i in 0..<frameLength {
+                    let sample = Float(samples[i]) * scale
+                    sum += sample * sample
+                }
+            }
+            count = Float(frameLength * channelCount)
+        } else {
+            return 0
         }
-        let count = Float(frameLength * channelCount)
+
+        guard count > 0 else { return 0 }
         return sqrt(sum / count)
     }
 }
