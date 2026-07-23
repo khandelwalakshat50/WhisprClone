@@ -38,6 +38,13 @@ enum Constants {
         /// Split long transcripts into sentence-aware pieces before the LLM
         /// so latency stays bounded for lengthy dictation.
         static let maxChunkCharacters: Int = 2_200
+        /// Auto mode: utterances longer than this prefer Gemini (accuracy);
+        /// shorter ones prefer Groq (speed).
+        static let longFormAudioSeconds: TimeInterval = 7
+        /// Word-count proxy for ~7s of speech (~150 wpm → ~2.5 words/s).
+        static let longFormMinWords: Int = 18
+        /// Character-count proxy when word splitting is sparse.
+        static let longFormMinCharacters: Int = 110
     }
 
     enum LLM {
@@ -46,6 +53,12 @@ enum Constants {
         static let defaultOllamaModel = "qwen3:8b"
         static let fallbackOllamaModel = "llama3.2"
         static let defaultGroqModel = "llama-3.3-70b-versatile"
+        static let defaultGeminiModel = "gemini-3.5-flash"
+        /// Fast path when 3.5 Flash is overloaded (503) — ~1s in healthy probes.
+        static let fallbackGeminiModel = "gemini-3.1-flash-lite"
+        static let geminiTimeoutSeconds: TimeInterval = 8
+        /// Cap completion length — dictation cleanup rarely needs more.
+        static let geminiMaxOutputTokens: Int = 768
     }
 
     enum Injection {

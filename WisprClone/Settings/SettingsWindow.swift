@@ -124,21 +124,28 @@ struct SettingsView: View {
             Section("Formatting") {
                 Picker("Mode", selection: $store.configuration.formattingMode) {
                     Text("Local Only (Ollama)").tag(FormattingMode.localOnly)
+                    Text("Gemini Only").tag(FormattingMode.geminiOnly)
                     Text("Groq Only").tag(FormattingMode.groqOnly)
                     Text("OpenAI Only").tag(FormattingMode.openAIOnly)
-                    Text("Auto Fallback (Groq → OpenAI → Ollama)").tag(FormattingMode.autoFallback)
+                    Text("Auto Fallback (short→Groq, long→Gemini)").tag(FormattingMode.autoFallback)
                 }
+                Text("Auto mode: under ~7s uses Groq for speed; longer dictation prefers Gemini for accuracy.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 TextField("Ollama model", text: $store.configuration.ollamaModel)
+                TextField("Gemini model", text: $store.configuration.geminiModel)
                 TextField("Groq model", text: $store.configuration.groqModel)
                 TextField("OpenAI model", text: $store.configuration.openAIModel)
 
+                SecureField("Gemini API Key", text: $store.geminiAPIKey)
+                    .onSubmit { store.saveAPIKeysFromUI() }
                 SecureField("Groq API Key", text: $store.groqAPIKey)
                     .onSubmit { store.saveAPIKeysFromUI() }
                 SecureField("OpenAI API Key", text: $store.openAIAPIKey)
                     .onSubmit { store.saveAPIKeysFromUI() }
 
                 if store.loadedKeysFromEnv {
-                    Text("Keys also loaded from `.env` / environment.")
+                    Text("Keys also loaded from `.env` / environment (`GEMINI_API_KEY`, etc.).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -449,6 +456,7 @@ private struct ProviderUsageRow: View {
 
     private var providerColor: Color {
         switch provider {
+        case .gemini: return .teal
         case .ollama: return .purple
         case .groq: return .orange
         case .openAI: return .green

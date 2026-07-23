@@ -119,6 +119,14 @@ final class DictationCoordinator {
         case (.stop, .listening), (.stop, .detectingSpeech),
              (.toggle, .listening), (.toggle, .detectingSpeech):
             requestRecordingStop()
+        // Escape hatch when an LLM call hangs on "Refining".
+        case (.stop, .formatting), (.stop, .transcribing), (.stop, .injecting),
+             (.toggle, .formatting), (.toggle, .transcribing), (.toggle, .injecting):
+            DiagnosticLog.write("cancel stuck session from \(recordingState.state)")
+            cancelActiveSession(resetState: true)
+        case (.begin, .formatting), (.begin, .transcribing), (.begin, .injecting):
+            DiagnosticLog.write("restart — cancel stuck \(recordingState.state)")
+            beginSession()
         default:
             DiagnosticLog.write("hotkey ignored for current state")
             break
@@ -325,6 +333,8 @@ final class DictationCoordinator {
 
         // Format
         recordingState.update(.formatting)
+        let listenSeconds = speechStartedAt.map { AppLogger.elapsedMilliseconds(since: $0) / 1000 } ?? 0
+        let geminiKey = configurationStore.resolvedGeminiKey() ?? ""
         let openAIKey = configurationStore.resolvedOpenAIKey() ?? ""
         let groqKey = configurationStore.resolvedGroqKey() ?? ""
         let formatter = LLMFormattingService(
@@ -333,6 +343,9 @@ final class DictationCoordinator {
                 model: config.ollamaModel,
                 timeout: config.ollamaTimeout
             ),
+            gemini: geminiKey.isEmpty
+                ? nil
+                : GeminiClient(apiKey: geminiKey, model: config.geminiModel, temperature: config.temperature),
             groq: groqKey.isEmpty
                 ? nil
                 : GroqClient(apiKey: groqKey, model: config.groqModel, temperature: config.temperature),
@@ -341,7 +354,8 @@ final class DictationCoordinator {
                 : OpenAIClient(apiKey: openAIKey, model: config.openAIModel, temperature: config.temperature),
             recordUsage: { [weak usageStore] provider in
                 await usageStore?.record(provider)
-            }
+            },
+            utteranceDurationSeconds: listenSeconds
         )
         let formattingStart = ContinuousClock.now
         let formatResult = try await AppLogger.measure("llm.format", logger: AppLogger.llm) {

@@ -7,6 +7,7 @@ enum SpeechEngine: String, CaseIterable, Sendable {
 
 enum FormattingMode: String, CaseIterable, Sendable {
     case localOnly
+    case geminiOnly
     case groqOnly
     case openAIOnly
     case autoFallback
@@ -31,6 +32,7 @@ struct Configuration: Equatable, Sendable {
     var speechEngine: SpeechEngine
     var formattingMode: FormattingMode
     var ollamaModel: String
+    var geminiModel: String
     var openAIModel: String
     var groqModel: String
     var whisperModel: String
@@ -44,6 +46,7 @@ struct Configuration: Equatable, Sendable {
         speechEngine: .whisperKit,
         formattingMode: .autoFallback,
         ollamaModel: Constants.LLM.defaultOllamaModel,
+        geminiModel: Constants.LLM.defaultGeminiModel,
         openAIModel: "gpt-4o-mini",
         groqModel: Constants.LLM.defaultGroqModel,
         whisperModel: "base",

@@ -9,6 +9,7 @@ final class ConfigurationStore: ObservableObject {
         didSet { persist(configuration) }
     }
 
+    @Published var geminiAPIKey: String = ""
     @Published var openAIAPIKey: String = ""
     @Published var groqAPIKey: String = ""
 
@@ -21,6 +22,7 @@ final class ConfigurationStore: ObservableObject {
         static let speechEngine = "speechEngine"
         static let formattingMode = "formattingMode"
         static let ollamaModel = "ollamaModel"
+        static let geminiModel = "geminiModel"
         static let openAIModel = "openAIModel"
         static let groqModel = "groqModel"
         static let whisperModel = "whisperModel"
@@ -44,8 +46,13 @@ final class ConfigurationStore: ObservableObject {
     }
 
     func saveAPIKeysFromUI() {
+        saveKey(geminiAPIKey, for: .geminiAPIKey, label: "Gemini")
         saveKey(openAIAPIKey, for: .openAIAPIKey, label: "OpenAI")
         saveKey(groqAPIKey, for: .groqAPIKey, label: "Groq")
+    }
+
+    func resolvedGeminiKey() -> String? {
+        resolvedKey(ui: geminiAPIKey, keychain: .geminiAPIKey, env: EnvLoader.current.geminiAPIKey)
     }
 
     func resolvedOpenAIKey() -> String? {
@@ -63,6 +70,10 @@ final class ConfigurationStore: ObservableObject {
         loadedKeysFromEnv = env.hasAnyKey
 
         // Seed Keychain once from .env when empty (so keys survive without keeping the file).
+        if let envKey = env.geminiAPIKey, !envKey.isEmpty,
+           ((try? KeychainStore.load(.geminiAPIKey)) ?? nil) == nil {
+            try? KeychainStore.save(envKey, for: .geminiAPIKey)
+        }
         if let envKey = env.openAIAPIKey, !envKey.isEmpty,
            ((try? KeychainStore.load(.openAIAPIKey)) ?? nil) == nil {
             try? KeychainStore.save(envKey, for: .openAIAPIKey)
@@ -72,6 +83,9 @@ final class ConfigurationStore: ObservableObject {
             try? KeychainStore.save(envKey, for: .groqAPIKey)
         }
 
+        geminiAPIKey = (try? KeychainStore.load(.geminiAPIKey))
+            ?? env.geminiAPIKey
+            ?? ""
         openAIAPIKey = (try? KeychainStore.load(.openAIAPIKey))
             ?? env.openAIAPIKey
             ?? ""
@@ -106,6 +120,7 @@ final class ConfigurationStore: ObservableObject {
         defaults.set(config.speechEngine.rawValue, forKey: Keys.speechEngine)
         defaults.set(config.formattingMode.rawValue, forKey: Keys.formattingMode)
         defaults.set(config.ollamaModel, forKey: Keys.ollamaModel)
+        defaults.set(config.geminiModel, forKey: Keys.geminiModel)
         defaults.set(config.openAIModel, forKey: Keys.openAIModel)
         defaults.set(config.groqModel, forKey: Keys.groqModel)
         defaults.set(config.whisperModel, forKey: Keys.whisperModel)
@@ -127,6 +142,9 @@ final class ConfigurationStore: ObservableObject {
         }
         if let model = defaults.string(forKey: Keys.ollamaModel) {
             config.ollamaModel = model
+        }
+        if let model = defaults.string(forKey: Keys.geminiModel) {
+            config.geminiModel = model
         }
         if let model = defaults.string(forKey: Keys.openAIModel) {
             config.openAIModel = model

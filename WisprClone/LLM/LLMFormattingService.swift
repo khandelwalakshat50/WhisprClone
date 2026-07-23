@@ -8,13 +8,17 @@ struct FormatResult: Sendable {
     let notes: [String]
 }
 
-/// Routes formatting across Local / Groq / OpenAI / Auto Fallback.
+/// Routes formatting across Gemini / Groq / OpenAI / Local / Auto Fallback.
 struct LLMFormattingService: TextFormatter {
     var mode: FormattingMode
     var ollama: OllamaClient
+    var gemini: GeminiClient?
     var groq: GroqClient?
     var openAI: OpenAIClient?
     var recordUsage: (@Sendable (LLMProvider) async -> Void)?
+
+    /// Capture-window length used by Auto mode to pick Gemini vs Groq first.
+    var utteranceDurationSeconds: TimeInterval = 0
 
     func format(text: String) async throws -> String {
         try await formatDetailed(text: text).text
@@ -29,7 +33,7 @@ struct LLMFormattingService: TextFormatter {
 
         let pieces = Self.splitForFormatting(trimmed, maxCharacters: Constants.Formatting.maxChunkCharacters)
         if pieces.count == 1 {
-            return try await formatSingle(pieces[0], extraNotes: [])
+            return try await formatSingle(pieces[0], fullTranscript: trimmed, extraNotes: [])
         }
 
         // Long dictation: format sentence-bounded chunks (keeps latency and
@@ -39,7 +43,7 @@ struct LLMFormattingService: TextFormatter {
         var provider: LLMProvider = .ollama
 
         for (i, piece) in pieces.enumerated() {
-            let part = try await formatSingle(piece, extraNotes: [])
+            let part = try await formatSingle(piece, fullTranscript: trimmed, extraNotes: [])
             provider = part.provider
             notes.append(contentsOf: part.notes.map { "chunk \(i + 1): \($0)" })
             let cleaned = part.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -55,7 +59,11 @@ struct LLMFormattingService: TextFormatter {
         )
     }
 
-    private func formatSingle(_ trimmed: String, extraNotes: [String]) async throws -> FormatResult {
+    private func formatSingle(
+        _ trimmed: String,
+        fullTranscript: String,
+        extraNotes: [String]
+    ) async throws -> FormatResult {
         var notes = extraNotes
         let result: String
         let provider: LLMProvider
@@ -64,6 +72,10 @@ struct LLMFormattingService: TextFormatter {
         case .localOnly:
             result = try await ollama.format(text: trimmed)
             provider = .ollama
+        case .geminiOnly:
+            guard let gemini else { throw AppError.notConfigured("Gemini API Key Missing") }
+            result = try await gemini.format(text: trimmed)
+            provider = .gemini
         case .groqOnly:
             guard let groq else { throw AppError.notConfigured("Groq API Key Missing") }
             result = try await groq.format(text: trimmed)
@@ -73,12 +85,29 @@ struct LLMFormattingService: TextFormatter {
             result = try await openAI.format(text: trimmed)
             provider = .openAI
         case .autoFallback:
-            (result, provider, notes) = try await autoFormat(trimmed)
+            let preferGemini = Self.isLongForm(
+                transcript: fullTranscript,
+                durationSeconds: utteranceDurationSeconds
+            )
+            (result, provider, notes) = try await autoFormat(trimmed, preferGeminiFirst: preferGemini)
             notes = extraNotes + notes
         }
 
         await recordUsage?(provider)
         return FormatResult(text: Self.sanitize(result), provider: provider, notes: notes)
+    }
+
+    /// Long form → Gemini first (accuracy). Short form → Groq first (speed).
+    static func isLongForm(transcript: String, durationSeconds: TimeInterval) -> Bool {
+        let words = transcript
+            .split { $0.isWhitespace || $0.isNewline }
+            .filter { !$0.isEmpty }
+            .count
+        let chars = transcript.count
+        if durationSeconds > Constants.Formatting.longFormAudioSeconds { return true }
+        if words >= Constants.Formatting.longFormMinWords { return true }
+        if chars >= Constants.Formatting.longFormMinCharacters { return true }
+        return false
     }
 
     /// Prefer sentence boundaries; fall back to hard splits for run-on speech.
@@ -171,32 +200,85 @@ struct LLMFormattingService: TextFormatter {
         return output
     }
 
-    /// Groq → OpenAI → Ollama
-    private func autoFormat(_ text: String) async throws -> (String, LLMProvider, [String]) {
+    /// Auto order: Gemini-first (long) or Groq-first (short), then the other, OpenAI, Ollama.
+    private func autoFormat(
+        _ text: String,
+        preferGeminiFirst: Bool
+    ) async throws -> (String, LLMProvider, [String]) {
         var notes: [String] = []
-
-        if let groq {
-            do {
-                return (try await groq.format(text: text), .groq, notes)
-            } catch let error where Self.shouldFallback(error) {
-                let reason = Self.shortReason(error)
-                notes.append("Groq unavailable (\(reason)); tried next provider")
-                AppLogger.llm.warning("Groq unavailable; trying OpenAI — \(error.localizedDescription, privacy: .public)")
-            }
+        let words = text.split { $0.isWhitespace || $0.isNewline }.filter { !$0.isEmpty }.count
+        if preferGeminiFirst {
+            notes.append(
+                String(
+                    format: "Auto route: long-form (%.1fs / %d words) → Gemini first",
+                    utteranceDurationSeconds,
+                    words
+                )
+            )
+            DiagnosticLog.write(
+                String(format: "format route=gemini-first duration=%.1fs words=%d", utteranceDurationSeconds, words)
+            )
         } else {
-            notes.append("Groq not configured; tried next provider")
+            notes.append(
+                String(
+                    format: "Auto route: short-form (%.1fs / %d words) → Groq first",
+                    utteranceDurationSeconds,
+                    words
+                )
+            )
+            DiagnosticLog.write(
+                String(format: "format route=groq-first duration=%.1fs words=%d", utteranceDurationSeconds, words)
+            )
         }
 
-        if let openAI {
-            do {
-                return (try await openAI.format(text: text), .openAI, notes)
-            } catch let error where Self.shouldFallback(error) {
-                let reason = Self.shortReason(error)
-                notes.append("OpenAI unavailable (\(reason)); tried Ollama")
-                AppLogger.llm.warning("OpenAI unavailable; trying Ollama — \(error.localizedDescription, privacy: .public)")
+        let cloudOrder: [LLMProvider] = preferGeminiFirst
+            ? [.gemini, .groq, .openAI]
+            : [.groq, .gemini, .openAI]
+
+        for provider in cloudOrder {
+            switch provider {
+            case .gemini:
+                if let gemini {
+                    do {
+                        return (try await gemini.format(text: text), .gemini, notes)
+                    } catch let error where Self.shouldFallback(error) {
+                        notes.append("Gemini unavailable (\(Self.shortReason(error))); tried next provider")
+                        AppLogger.llm.warning(
+                            "Gemini unavailable; trying next — \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                } else {
+                    notes.append("Gemini not configured; tried next provider")
+                }
+            case .groq:
+                if let groq {
+                    do {
+                        return (try await groq.format(text: text), .groq, notes)
+                    } catch let error where Self.shouldFallback(error) {
+                        notes.append("Groq unavailable (\(Self.shortReason(error))); tried next provider")
+                        AppLogger.llm.warning(
+                            "Groq unavailable; trying next — \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                } else {
+                    notes.append("Groq not configured; tried next provider")
+                }
+            case .openAI:
+                if let openAI {
+                    do {
+                        return (try await openAI.format(text: text), .openAI, notes)
+                    } catch let error where Self.shouldFallback(error) {
+                        notes.append("OpenAI unavailable (\(Self.shortReason(error))); tried Ollama")
+                        AppLogger.llm.warning(
+                            "OpenAI unavailable; trying Ollama — \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                } else {
+                    notes.append("OpenAI not configured; tried Ollama")
+                }
+            case .ollama:
+                break
             }
-        } else {
-            notes.append("OpenAI not configured; tried Ollama")
         }
 
         do {

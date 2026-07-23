@@ -2,12 +2,14 @@ import Combine
 import Foundation
 
 enum LLMProvider: String, CaseIterable, Codable, Sendable {
+    case gemini
     case ollama
     case groq
     case openAI
 
     var displayName: String {
         switch self {
+        case .gemini: return "Gemini"
         case .ollama: return "Ollama"
         case .groq: return "Groq"
         case .openAI: return "OpenAI"
@@ -16,6 +18,7 @@ enum LLMProvider: String, CaseIterable, Codable, Sendable {
 
     var detail: String {
         switch self {
+        case .gemini: return "Cloud API key · Priority"
         case .ollama: return "Local · No API key"
         case .groq: return "Cloud API key"
         case .openAI: return "Cloud API key"
@@ -24,6 +27,7 @@ enum LLMProvider: String, CaseIterable, Codable, Sendable {
 
     var symbolName: String {
         switch self {
+        case .gemini: return "sparkles"
         case .ollama: return "desktopcomputer"
         case .groq: return "bolt.fill"
         case .openAI: return "cloud.fill"

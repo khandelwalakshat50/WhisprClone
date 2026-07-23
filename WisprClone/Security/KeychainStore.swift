@@ -1,10 +1,11 @@
 import Foundation
 import Security
 
-/// Thin Keychain wrapper for sensitive secrets (OpenAI / Groq API keys).
+/// Thin Keychain wrapper for sensitive secrets (Gemini / OpenAI / Groq API keys).
 /// Values never touch UserDefaults. `.env` can seed Keychain via `ConfigurationStore`.
 enum KeychainStore {
     enum Key: String {
+        case geminiAPIKey = "gemini_api_key"
         case openAIAPIKey = "openai_api_key"
         case groqAPIKey = "groq_api_key"
     }
