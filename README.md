@@ -13,51 +13,64 @@ Local-first AI dictation for macOS 15+. Menu bar app — no Dock icon.
 - macOS 15+
 - Swift 6
 - Optional: [Ollama](https://ollama.com) for local formatting (`qwen3:8b` / `llama3.2`)
-- Optional: OpenAI and/or Groq API keys (via `.env`)
+- Optional: **Gemini**, Groq, and/or OpenAI API keys (via `.env` or Preferences)
 
 ## API keys (`.env`)
 
-1. Edit the repo-root [`.env`](.env) file (already created; gitignored):
+1. Copy the template and fill in real keys (never commit `.env`):
+
+```bash
+cp .env.example .env
+```
 
 ```env
+GEMINI_API_KEY=AIza...
 OPENAI_API_KEY=sk-...
 GROQ_API_KEY=gsk_...
 ```
 
-2. Or copy from the template: `cp .env.example .env`
+`GOOGLE_API_KEY` is also accepted as an alias for Gemini.
 
-On launch the app loads keys from:
+2. On launch the app loads keys from (first match wins per key, then merges):
 
 1. Process environment  
-2. `~/Library/Application Support/WisprClone/.env`  
-3. Working directory / walk-up from the app bundle (finds the repo `.env` when run from Xcode)
+2. Working directory / walk-up from the app bundle (finds the repo `.env` when run from Xcode)  
+3. `~/OpenWhisper/.env` (and a few common clone paths) when launched from `/Applications`  
+4. `~/Library/Application Support/WisprClone/.env` (mirrored for Release installs)
 
-Keys are seeded into the **Keychain** when missing. You can also paste/edit them in **Preferences**.
+Keys are seeded into the **Keychain** when missing. You can also paste/edit them in **Preferences → Formatting**. Use **Reload .env** after editing the file.
 
 ## Open & Run
 
 1. Open `WisprClone.xcodeproj` in Xcode.
 2. Allow Xcode to resolve the **WhisperKit** Swift package.
-3. Paste your keys into `.env`.
+3. Paste your keys into `.env` (or Preferences).
 4. Run the **WisprClone** scheme (⌘R).
 5. Grant **Microphone**, **Accessibility**, and **Input Monitoring**.
+
+For a polished Release build in Applications, see the beginner guide / handbook deploy notes.
 
 ## Hotkeys
 
 | Action | Binding |
 |---|---|
-| Start dictation | **Double-tap Left ⌘** |
-| Stop and transcribe | **Tap Left ⌘ once** |
+| Start dictation | **Double-tap fn** |
+| Stop and transcribe | **Tap fn once** |
 | Toggle dictation | **⌘⇧Space** |
 
-Speak for as long as needed → manually stop → format (Ollama → Groq → OpenAI in Auto mode) → paste into the focused app.
+Speak → manually stop → WhisperKit (live chunks + full-file fallback) → LLM format → paste into the focused app.
 
 ## Formatting modes
 
-- **Local Only** — Ollama  
-- **Groq Only** — Groq Chat Completions  
-- **OpenAI Only** — OpenAI Chat Completions  
-- **Auto Fallback** — Ollama → Groq → OpenAI  
+| Mode | Behavior |
+|---|---|
+| **Local Only** | Ollama on your Mac |
+| **Gemini Only** | Google Gemini (`gemini-3.5-flash` by default) |
+| **Groq Only** | Groq Chat Completions |
+| **OpenAI Only** | OpenAI Chat Completions |
+| **Auto Fallback** | **Short** utterances (≤ ~7s / few words) → **Groq first** (speed). **Longer** dictation → **Gemini first** (accuracy). Then the other cloud provider → OpenAI → Ollama. |
+
+Gemini calls use a short dictation prompt, **minimal thinking**, and an 8s timeout; if `gemini-3.5-flash` is overloaded they retry **`gemini-3.1-flash-lite`** before falling through.
 
 ## Phases
 
@@ -70,7 +83,7 @@ Speak for as long as needed → manually stop → format (Ollama → Groq → Op
 | 5 Audio recording | Done |
 | 6 RMS VAD | Done |
 | 7 Speech (WhisperKit + Apple) | Done |
-| 8 LLM formatting | Done |
+| 8 LLM formatting (Gemini / Groq / OpenAI / Ollama) | Done |
 | 9 Text injection | Done |
 | 10 Settings | Done |
 | 11 Unified OSLog (`AppLogger`) | Done |
@@ -82,3 +95,4 @@ Speak for as long as needed → manually stop → format (Ollama → Groq → Op
 - Hardened Runtime is enabled.
 - `.env` is gitignored — never commit real keys.
 - Runtime storage prefers **Keychain** after the first successful load.
+- Cloud formatting sends **transcript text** (not raw audio) to the chosen provider — only enable keys you intend to use.

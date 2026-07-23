@@ -25,7 +25,7 @@ WisprClone is a **menu‑bar dictation app** for Mac (no Dock icon in normal use
 | A Mac | **macOS 15 (Sequoia)** or newer — Apple menu → **About This Mac** |
 | Internet | Needed the first time (downloads speech model + optional cloud formatting) |
 | Time | First setup: about **30–60 minutes** (mostly waiting for downloads) |
-| Optional API keys | Groq and/or OpenAI — only if you want cloud text cleanup |
+| Optional API keys | **Gemini**, Groq, and/or OpenAI — only if you want cloud text cleanup |
 | Optional Ollama | Only if you want cleanup that never leaves your Mac |
 
 ---
@@ -84,16 +84,21 @@ You only do this once.
 Speech transcription can run **entirely on your Mac**.  
 Cleanup (“make this sound like writing”) can use:
 
-- **Groq** or **OpenAI** (cloud — text leaves your Mac for that step), or  
-- **Ollama** (local — text stays on your Mac), or  
-- Skip cleanup and paste raw transcripts.
+- **Gemini** (Google) — strong cleanup quality; used first on longer dictation in Auto mode  
+- **Groq** — very fast cleanup; used first on short phrases in Auto mode  
+- **OpenAI** — another cloud option  
+- **Ollama** — local cleanup that never leaves your Mac  
+- Or skip cleanup and paste raw transcripts  
+
+You only need **one** cloud key if you use cloud formatting. For the best Auto experience, add **both Gemini and Groq**.
 
 ### Using Preferences (recommended for beginners)
 
 1. Run the app once (Step 5).
 2. Click **Wispr** in the menu bar → **Preferences…**
-3. Paste your Groq and/or OpenAI key into the fields.
-4. Keys are stored in your Mac’s **Keychain** (not uploaded to GitHub).
+3. Under **Formatting**, paste your **Gemini**, **Groq**, and/or **OpenAI** key.
+4. Leave mode on **Auto Fallback (short→Groq, long→Gemini)** unless you want a single provider.
+5. Keys are stored in your Mac’s **Keychain** (not uploaded to GitHub).
 
 ### Or using a `.env` file
 
@@ -108,8 +113,9 @@ Cleanup (“make this sound like writing”) can use:
    ```
 
 4. Save. **Never commit this file or share it.**
+5. If the app was already running: Preferences → **Reload .env**, or quit and reopen.
 
-You only need **one** cloud key if you use cloud formatting.
+Get a Gemini key from [Google AI Studio](https://aistudio.google.com/apikey). Groq and OpenAI have their own dashboards.
 
 ---
 
@@ -167,6 +173,11 @@ You can also open **Preferences** in the app and use **Open Settings** / **Refre
 7. Wait for Thinking → Refining → Writing → Done.
 8. Your words should appear at the cursor.
 
+**Auto formatting (default):**
+
+- Short speech (about **7 seconds or less**) usually cleans up with **Groq** (faster).  
+- Longer speech prefers **Gemini** (more accurate cleanup), then falls back if needed.
+
 The **first** transcription can be slow while the speech model finishes preparing. Later uses are faster. Short phrases may still take a few seconds; longer speech often feels quicker because work starts while you talk.
 
 **Tip:** Keep the cursor in the other app (Notes, Slack, etc.). Don’t click the Wispr overlay before paste finishes.
@@ -197,7 +208,7 @@ You do not need to rebuild every day unless code changed — but while using the
    ```
 
 3. Leave Ollama running.
-4. In WisprClone Preferences, set formatting to **Local Only** (or **Auto Fallback**, which can try local after cloud).
+4. In WisprClone Preferences, set formatting to **Local Only** (or **Auto Fallback**, which can try Ollama after cloud providers).
 
 ---
 
@@ -246,7 +257,7 @@ WisprClone does **not** require an account with this open‑source project, and 
 
 ### When something can leave your Mac
 
-If you enable **Groq** or **OpenAI** formatting, the **text transcript** (not the raw audio file, in the normal flow) is sent to that provider over the internet so it can clean up wording.  
+If you enable **Gemini**, **Groq**, or **OpenAI** formatting, the **text transcript** (not the raw audio file, in the normal flow) is sent to that provider over the internet so it can clean up wording.  
 Their privacy policies apply for that step.
 
 If you use **Local Only (Ollama)** or skip cloud formatting, that cleanup step stays on your machine.
@@ -268,7 +279,7 @@ Please understand:
 
 1. **Powerful permissions** — Accessibility and Input Monitoring can, in general, allow an app to observe keyboard activity and control other apps. Only install and run builds you trust, from a source you trust (this repository / a person you trust).
 2. **Development builds** — Running from Xcode or an ad‑hoc `/Applications` copy is normal for open‑source Mac tools, but it is not the same as Apple‑notarized App Store software. macOS may warn you the first time you open an unsigned or locally signed binary.
-3. **API keys are secrets** — Anyone with your Groq/OpenAI key can use your quota. Treat keys like passwords. Rotate them if they leak.
+3. **API keys are secrets** — Anyone with your Gemini/Groq/OpenAI key can use your quota. Treat keys like passwords. Rotate them if they leak.
 4. **Cloud formatting risk** — Sending transcripts to a third‑party LLM can expose sensitive content (passwords, medical details, private messages). Do not dictate secrets if cloud formatting is on.
 5. **No warranty** — Authors and contributors are not responsible for data loss, unexpected pastes into the wrong app, API charges, or security incidents arising from misuse, misconfiguration, or running untrusted builds.
 6. **Your responsibility** — Keep macOS updated, grant the minimum permissions you need, and quit the app when you are not using it if you want to reduce always‑on hotkey exposure.
