@@ -13,7 +13,7 @@ struct OpenAIClient: TextFormatter {
         apiKey: String,
         model: String = "gpt-4o-mini",
         temperature: Double = 0.2,
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = Constants.LLM.chatTimeoutSeconds
     ) {
         self.apiKey = apiKey
         self.model = model

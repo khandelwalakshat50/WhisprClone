@@ -68,7 +68,7 @@ Speak → manually stop → WhisperKit (live chunks + full-file fallback) → LL
 | **Gemini Only** | Google Gemini (`gemini-3.5-flash` by default) |
 | **Groq Only** | Groq Chat Completions |
 | **OpenAI Only** | OpenAI Chat Completions |
-| **Auto Fallback** | **Short** utterances (≤ ~7s / few words) → **Groq first** (speed). **Longer** dictation → **Gemini first** (accuracy). Then the other cloud provider → OpenAI → Ollama. |
+| **Auto Fallback** | **Typical / medium** dictation (under ~90s) → **Groq first** (speed, progressive per live chunk). **Very long** captures → **Gemini first** (accuracy). Then the other cloud provider → OpenAI → Ollama. |
 
 Gemini calls use a short dictation prompt, **minimal thinking**, and an 8s timeout; if `gemini-3.5-flash` is overloaded they retry **`gemini-3.1-flash-lite`** before falling through.
 

@@ -21,8 +21,8 @@ enum Constants {
         /// WhisperKit expects 16 kHz mono floats.
         static let whisperSampleRate: Double = 16_000
         /// Force-commit a live chunk after this much buffered speech (no pause).
-        /// Lower than before so medium utterances overlap Whisper with speaking.
-        static let liveChunkMaxSeconds: TimeInterval = 5
+        /// Shorter windows → more progressive Groq overlap on long dictation.
+        static let liveChunkMaxSeconds: TimeInterval = 4
         /// Ignore silence commits shorter than this (avoids tiny empty chunks).
         static let liveChunkMinSeconds: TimeInterval = 0.55
         /// Clips shorter than this use fast decode options (no VAD chunking).
@@ -36,15 +36,20 @@ enum Constants {
 
     enum Formatting {
         /// Split long transcripts into sentence-aware pieces before the LLM
-        /// so latency stays bounded for lengthy dictation.
-        static let maxChunkCharacters: Int = 2_200
-        /// Auto mode: utterances longer than this prefer Gemini (accuracy);
-        /// shorter ones prefer Groq (speed).
-        static let longFormAudioSeconds: TimeInterval = 7
-        /// Word-count proxy for ~7s of speech (~150 wpm → ~2.5 words/s).
-        static let longFormMinWords: Int = 18
+        /// so parallel Groq calls stay small and fast.
+        static let maxChunkCharacters: Int = 700
+        /// Auto mode: only *very* long captures prefer Gemini first.
+        /// Medium dictation (20–60s) stays on Groq for latency.
+        static let longFormAudioSeconds: TimeInterval = 90
+        /// Word-count proxy when duration is unknown (~90s of speech).
+        static let longFormMinWords: Int = 200
         /// Character-count proxy when word splitting is sparse.
-        static let longFormMinCharacters: Int = 110
+        static let longFormMinCharacters: Int = 1_200
+        /// Skip the network when ASR already looks like polished prose.
+        static let skipLLMMaxCharacters: Int = 100
+        /// Progressive result must cover at least this fraction of the full
+        /// transcript length or we fall back to a single-shot format.
+        static let progressiveMinCoverage: Double = 0.80
     }
 
     enum LLM {
@@ -52,13 +57,18 @@ enum Constants {
         static let ollamaTimeoutSeconds: TimeInterval = 5
         static let defaultOllamaModel = "qwen3:8b"
         static let fallbackOllamaModel = "llama3.2"
-        static let defaultGroqModel = "llama-3.3-70b-versatile"
+        /// Low-latency Groq SKU for short-form formatting (sub-second target).
+        static let defaultGroqModel = "llama-3.1-8b-instant"
+        /// Previous stock default — migrated to `defaultGroqModel` on load.
+        static let legacyDefaultGroqModel = "llama-3.3-70b-versatile"
         static let defaultGeminiModel = "gemini-3.5-flash"
         /// Fast path when 3.5 Flash is overloaded (503) — ~1s in healthy probes.
         static let fallbackGeminiModel = "gemini-3.1-flash-lite"
         static let geminiTimeoutSeconds: TimeInterval = 8
-        /// Cap completion length — dictation cleanup rarely needs more.
-        static let geminiMaxOutputTokens: Int = 768
+        static let chatTimeoutSeconds: TimeInterval = 8
+        /// Cap completion length — chunked formatting rarely needs more.
+        static let geminiMaxOutputTokens: Int = 1_536
+        static let chatMaxOutputTokens: Int = 1_536
     }
 
     enum Injection {

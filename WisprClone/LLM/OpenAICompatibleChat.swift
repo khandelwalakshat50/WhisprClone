@@ -2,6 +2,16 @@ import Foundation
 
 /// Shared OpenAI-compatible Chat Completions request (OpenAI + Groq).
 enum OpenAICompatibleChat {
+    /// Reused session keeps TLS warm across dictations (matches GeminiClient).
+    private static let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = Constants.LLM.chatTimeoutSeconds
+        config.timeoutIntervalForResource = Constants.LLM.chatTimeoutSeconds + 2
+        config.waitsForConnectivity = false
+        config.httpMaximumConnectionsPerHost = 4
+        return URLSession(configuration: config)
+    }()
+
     static func complete(
         endpoint: URL,
         apiKey: String,
@@ -24,6 +34,7 @@ enum OpenAICompatibleChat {
         let body: [String: Any] = [
             "model": model,
             "temperature": temperature,
+            "max_tokens": Constants.LLM.chatMaxOutputTokens,
             "messages": [
                 ["role": "system", "content": LLMPrompt.system],
                 ["role": "user", "content": LLMPrompt.userMessage(for: userText)]
@@ -35,7 +46,7 @@ enum OpenAICompatibleChat {
             let data: Data
             let response: URLResponse
             do {
-                (data, response) = try await URLSession.shared.data(for: request)
+                (data, response) = try await Self.session.data(for: request)
             } catch let urlError as URLError where urlError.code == .timedOut {
                 throw AppError.llmTimeout
             } catch {

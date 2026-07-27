@@ -373,11 +373,15 @@ final class DictationCoordinator {
         let formatResult: FormatResult
         if let progressive = progressiveFormatter, progressive.didStart,
            let progressiveResult = await progressive.finish(),
-           Self.hasMeaningfulSpeech(progressiveResult.text) {
+           Self.hasMeaningfulSpeech(progressiveResult.text),
+           Self.progressiveCoversTranscript(
+            progressive: progressiveResult.text,
+            full: cleanedTranscript
+           ) {
             formatResult = progressiveResult
             delayNotes.append(contentsOf: progressiveResult.notes)
             DiagnosticLog.write(
-                "using progressive LLM chars=\(progressiveResult.text.count) provider=\(progressiveResult.provider.rawValue)"
+                "using progressive LLM chars=\(progressiveResult.text.count) provider=\(progressiveResult.provider.rawValue) chunks=\(progressive.startedCount)"
             )
         } else {
             let formatter = makeFormattingService(
@@ -456,6 +460,21 @@ final class DictationCoordinator {
         if normalized.hasPrefix("no speech") { return false }
         if normalized.hasPrefix("nothing to") { return false }
 
+        return true
+    }
+
+    /// Progressive chunk join can drift from full live join; require enough coverage.
+    private static func progressiveCoversTranscript(progressive: String, full: String) -> Bool {
+        let p = progressive.trimmingCharacters(in: .whitespacesAndNewlines).count
+        let f = full.trimmingCharacters(in: .whitespacesAndNewlines).count
+        guard f > 0 else { return false }
+        let ratio = Double(p) / Double(f)
+        if ratio < Constants.Formatting.progressiveMinCoverage {
+            DiagnosticLog.write(
+                String(format: "progressive coverage low %.0f%% (%d/%d); single-shot fallback", ratio * 100, p, f)
+            )
+            return false
+        }
         return true
     }
 

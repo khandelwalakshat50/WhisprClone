@@ -71,7 +71,7 @@ struct GeminiClient: TextFormatter {
         // Minimal thinking is the main latency win on Gemini 3.x Flash.
         let body: [String: Any] = [
             "system_instruction": [
-                "parts": [["text": LLMPrompt.geminiSystem]]
+                "parts": [["text": LLMPrompt.system]]
             ],
             "contents": [
                 [

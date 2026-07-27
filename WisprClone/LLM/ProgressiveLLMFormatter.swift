@@ -3,8 +3,9 @@ import Foundation
 /// Formats live ASR chunk texts as soon as Whisper returns them, so most
 /// “Refining” work overlaps with speaking / remaining transcription.
 ///
-/// Existing full-transcript formatting remains the fallback when progressive
-/// coverage is incomplete.
+/// Each ~4–5s live chunk is formatted on the fast Groq path (short system
+/// prompt + instant model). For a 30s utterance that means ~6 small calls
+/// that finish *during* speech — stop-to-paste waits mostly for the last one.
 final class ProgressiveLLMFormatter: @unchecked Sendable {
     private let formatter: LLMFormattingService
     private let lock = NSLock()
@@ -12,13 +13,11 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
     private var started = 0
 
     /// Chunk-local routing always prefers Groq in Auto mode (each live chunk
-    /// is ~5s — short-form), which is the main latency win.
+    /// is short-form), which is the main latency win for long dictation.
     init(formatter: LLMFormattingService) {
         var copy = formatter
-        copy.utteranceDurationSeconds = min(
-            formatter.utteranceDurationSeconds,
-            Constants.Formatting.longFormAudioSeconds - 0.1
-        )
+        // Force short-form routing regardless of parent utterance length.
+        copy.utteranceDurationSeconds = 0
         self.formatter = copy
     }
 
@@ -27,10 +26,10 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
         guard !trimmed.isEmpty else { return }
 
         lock.lock()
-        if tasks[index] != nil {
-            lock.unlock()
-            return
-        }
+        defer { lock.unlock() }
+
+        if tasks[index] != nil { return }
+
         started += 1
         let formatter = self.formatter
         let task = Task<FormatResult?, Never> {
@@ -48,10 +47,9 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
             }
         }
         tasks[index] = task
-        lock.unlock()
     }
 
-    /// Waits for every ingested chunk. Returns nil if nothing usable completed
+    /// Waits for every ingested chunk. Returns nil only if coverage is unusable
     /// so the caller can fall back to full-transcript formatting.
     func finish() async -> FormatResult? {
         let snapshot: [Int: Task<FormatResult?, Never>] = {
@@ -66,7 +64,6 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
         for index in snapshot.keys.sorted() {
             guard let task = snapshot[index] else { continue }
             guard let result = await task.value else {
-                // Incomplete progressive coverage — let the caller use full-transcript formatting.
                 DiagnosticLog.write("progressive LLM incomplete at chunk #\(index); fallback")
                 return nil
             }
@@ -103,5 +100,11 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return started > 0
+    }
+
+    var startedCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return started
     }
 }

@@ -31,18 +31,38 @@ struct LLMFormattingService: TextFormatter {
             return FormatResult(text: "", provider: .ollama, notes: ["skipped: empty transcript"])
         }
 
-        let pieces = Self.splitForFormatting(trimmed, maxCharacters: Constants.Formatting.maxChunkCharacters)
-        if pieces.count == 1 {
-            return try await formatSingle(pieces[0], fullTranscript: trimmed, extraNotes: [])
+        if Self.looksAlreadyClean(trimmed) {
+            DiagnosticLog.write("llm skip already-clean chars=\(trimmed.count)")
+            return FormatResult(
+                text: trimmed,
+                provider: .groq,
+                notes: ["skipped LLM: transcript already clean"]
+            )
         }
 
-        // Long dictation: format sentence-bounded chunks in parallel.
-        var notes = ["LLM split into \(pieces.count) chunks for long dictation (parallel)"]
-        let full = trimmed
+        let pieces = Self.splitForFormatting(trimmed, maxCharacters: Constants.Formatting.maxChunkCharacters)
+        if pieces.count == 1 {
+            return try await formatSingle(
+                pieces[0],
+                routingTranscript: trimmed,
+                forceShortForm: false,
+                extraNotes: []
+            )
+        }
+
+        // Long dictation: format sentence-bounded chunks in parallel on the
+        // fast (Groq-first) path — each piece is small even if the full
+        // utterance would have been routed to Gemini.
+        var notes = ["LLM split into \(pieces.count) chunks for long dictation (parallel Groq-first)"]
         let results: [(Int, FormatResult)] = try await withThrowingTaskGroup(of: (Int, FormatResult).self) { group in
             for (i, piece) in pieces.enumerated() {
                 group.addTask {
-                    let part = try await self.formatSingle(piece, fullTranscript: full, extraNotes: [])
+                    let part = try await self.formatSingle(
+                        piece,
+                        routingTranscript: piece,
+                        forceShortForm: true,
+                        extraNotes: []
+                    )
                     return (i, part)
                 }
             }
@@ -73,7 +93,8 @@ struct LLMFormattingService: TextFormatter {
 
     private func formatSingle(
         _ trimmed: String,
-        fullTranscript: String,
+        routingTranscript: String,
+        forceShortForm: Bool,
         extraNotes: [String]
     ) async throws -> FormatResult {
         var notes = extraNotes
@@ -97,8 +118,8 @@ struct LLMFormattingService: TextFormatter {
             result = try await openAI.format(text: trimmed)
             provider = .openAI
         case .autoFallback:
-            let preferGemini = Self.isLongForm(
-                transcript: fullTranscript,
+            let preferGemini = !forceShortForm && Self.isLongForm(
+                transcript: routingTranscript,
                 durationSeconds: utteranceDurationSeconds
             )
             (result, provider, notes) = try await autoFormat(trimmed, preferGeminiFirst: preferGemini)
@@ -109,9 +130,9 @@ struct LLMFormattingService: TextFormatter {
         return FormatResult(text: Self.sanitize(result), provider: provider, notes: notes)
     }
 
-    /// Long form → Gemini first (accuracy). Short form → Groq first (speed).
+    /// Very long captures → Gemini first (accuracy). Medium/short → Groq first (speed).
     /// Prefer the mic-capture clock when available so a dense short phrase
-    /// (many words in under 7s) does not get routed to slower Gemini.
+    /// does not get routed to slower Gemini.
     static func isLongForm(transcript: String, durationSeconds: TimeInterval) -> Bool {
         if durationSeconds > Constants.Formatting.longFormAudioSeconds {
             return true
@@ -119,7 +140,7 @@ struct LLMFormattingService: TextFormatter {
         if durationSeconds > 0 {
             return false
         }
-        // Duration unknown — use text proxies.
+        // Duration unknown — use text proxies (high bars so medium text stays Groq).
         let words = transcript
             .split { $0.isWhitespace || $0.isNewline }
             .filter { !$0.isEmpty }
@@ -128,6 +149,19 @@ struct LLMFormattingService: TextFormatter {
         if words >= Constants.Formatting.longFormMinWords { return true }
         if chars >= Constants.Formatting.longFormMinCharacters { return true }
         return false
+    }
+
+    /// Conservative: only skip when ASR already looks like typed prose.
+    static func looksAlreadyClean(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (2...Constants.Formatting.skipLLMMaxCharacters).contains(t.count) else { return false }
+        guard t.first?.isUppercase == true else { return false }
+        guard t.hasSuffix(".") || t.hasSuffix("?") || t.hasSuffix("!") else { return false }
+
+        let padded = " \(t.lowercased()) "
+        let fillers = [" um ", " uh ", " er ", " ah ", " you know ", " sort of ", " kind of ", " like "]
+        if fillers.contains(where: { padded.contains($0) }) { return false }
+        return true
     }
 
     /// Prefer sentence boundaries; fall back to hard splits for run-on speech.

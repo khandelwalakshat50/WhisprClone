@@ -136,7 +136,7 @@ struct SettingsView: View {
                     Text("OpenAI Only").tag(FormattingMode.openAIOnly)
                     Text("Auto Fallback (short→Groq, long→Gemini)").tag(FormattingMode.autoFallback)
                 }
-                Text("Auto mode: under ~7s uses Groq for speed; longer dictation prefers Gemini for accuracy.")
+                Text("Auto mode: under ~90s uses Groq (progressive chunks while you speak); very long dictation prefers Gemini.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 TextField("Ollama model", text: $store.configuration.ollamaModel)

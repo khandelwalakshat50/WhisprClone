@@ -150,7 +150,12 @@ final class ConfigurationStore: ObservableObject {
             config.openAIModel = model
         }
         if let model = defaults.string(forKey: Keys.groqModel) {
-            config.groqModel = model
+            // Migrate the previous stock default to the low-latency instant model.
+            if model == Constants.LLM.legacyDefaultGroqModel {
+                config.groqModel = Constants.LLM.defaultGroqModel
+            } else {
+                config.groqModel = model
+            }
         }
         if let model = defaults.string(forKey: Keys.whisperModel) {
             config.whisperModel = model
