@@ -22,6 +22,10 @@ final class LiveChunkTranscriber: @unchecked Sendable {
     private var closed = false
     private var chunksCommitted = 0
 
+    /// Fired on the live-ASR queue when a chunk yields usable transcript text.
+    /// Used to start LLM formatting while the user is still speaking.
+    var onUsableChunk: (@Sendable (Int, String) -> Void)?
+
     private let targetFormat = AVAudioFormat(
         standardFormatWithSampleRate: Constants.Audio.whisperSampleRate,
         channels: 1
@@ -199,6 +203,7 @@ final class LiveChunkTranscriber: @unchecked Sendable {
                 self.chunkTextsByIndex[index] = text
                 if Self.isUsableChunk(text) {
                     self.lastCommittedText = text
+                    self.onUsableChunk?(index, text)
                 }
                 self.inflight -= 1
                 if self.closed, self.inflight == 0 {

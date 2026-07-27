@@ -36,14 +36,26 @@ struct LLMFormattingService: TextFormatter {
             return try await formatSingle(pieces[0], fullTranscript: trimmed, extraNotes: [])
         }
 
-        // Long dictation: format sentence-bounded chunks (keeps latency and
-        // quality stable instead of one huge prompt).
-        var notes = ["LLM split into \(pieces.count) chunks for long dictation"]
+        // Long dictation: format sentence-bounded chunks in parallel.
+        var notes = ["LLM split into \(pieces.count) chunks for long dictation (parallel)"]
+        let full = trimmed
+        let results: [(Int, FormatResult)] = try await withThrowingTaskGroup(of: (Int, FormatResult).self) { group in
+            for (i, piece) in pieces.enumerated() {
+                group.addTask {
+                    let part = try await self.formatSingle(piece, fullTranscript: full, extraNotes: [])
+                    return (i, part)
+                }
+            }
+            var collected: [(Int, FormatResult)] = []
+            for try await item in group {
+                collected.append(item)
+            }
+            return collected.sorted { $0.0 < $1.0 }
+        }
+
         var formattedParts: [String] = []
         var provider: LLMProvider = .ollama
-
-        for (i, piece) in pieces.enumerated() {
-            let part = try await formatSingle(piece, fullTranscript: trimmed, extraNotes: [])
+        for (i, part) in results {
             provider = part.provider
             notes.append(contentsOf: part.notes.map { "chunk \(i + 1): \($0)" })
             let cleaned = part.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -98,13 +110,21 @@ struct LLMFormattingService: TextFormatter {
     }
 
     /// Long form → Gemini first (accuracy). Short form → Groq first (speed).
+    /// Prefer the mic-capture clock when available so a dense short phrase
+    /// (many words in under 7s) does not get routed to slower Gemini.
     static func isLongForm(transcript: String, durationSeconds: TimeInterval) -> Bool {
+        if durationSeconds > Constants.Formatting.longFormAudioSeconds {
+            return true
+        }
+        if durationSeconds > 0 {
+            return false
+        }
+        // Duration unknown — use text proxies.
         let words = transcript
             .split { $0.isWhitespace || $0.isNewline }
             .filter { !$0.isEmpty }
             .count
         let chars = transcript.count
-        if durationSeconds > Constants.Formatting.longFormAudioSeconds { return true }
         if words >= Constants.Formatting.longFormMinWords { return true }
         if chars >= Constants.Formatting.longFormMinCharacters { return true }
         return false

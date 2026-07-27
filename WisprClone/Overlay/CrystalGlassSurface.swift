@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Single dark capsule — grey edge, no color tint layers.
+/// Frosted glassmorphic capsule — metallic silver edge, translucent fill.
 struct CrystalGlassSurface: View {
     let accent: Color
     let secondary: Color
@@ -8,30 +8,55 @@ struct CrystalGlassSurface: View {
 
     var body: some View {
         Capsule(style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [
-                        Color(white: 0.12),
-                        Color(white: 0.07)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
+            .fill(.ultraThinMaterial)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.22),
+                                Color.white.opacity(0.06),
+                                Color.black.opacity(0.18)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
             .overlay {
+                // Inner sheen
                 Capsule(style: .continuous)
                     .strokeBorder(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.40),
-                                Color.white.opacity(0.14),
-                                Color.white.opacity(0.08)
+                                Color.white.opacity(0.55),
+                                Color.white.opacity(0.12),
+                                Color.white.opacity(0.28)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 0.5
+                        lineWidth: 0.9
                     )
             }
+            .overlay {
+                // Soft metallic rim
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                accent.opacity(0.65),
+                                secondary.opacity(0.25),
+                                Color.white.opacity(0.18)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.5
+                    )
+                    .padding(0.5)
+            }
+            .shadow(color: Color.black.opacity(0.28), radius: 14, y: 6)
+            .shadow(color: Color.white.opacity(0.12), radius: 1, y: -0.5)
     }
 }

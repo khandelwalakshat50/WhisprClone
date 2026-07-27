@@ -7,6 +7,9 @@ import Carbon.HIToolbox
 /// Supports:
 /// 1. ⌘⇧Space to toggle recording
 /// 2. Double-tap Fn to begin; single-tap Fn to stop
+///
+/// Fn single-tap is **deferred** so a double-tap can cancel the pending stop
+/// and fire begin instead (avoids “first tap = stop, miss second = no UI”).
 final class GlobalHotkeyManager: @unchecked Sendable {
     enum Action: Equatable, Sendable {
         case toggle
@@ -26,11 +29,14 @@ final class GlobalHotkeyManager: @unchecked Sendable {
     private var globalMonitor: Any?
     private var localMonitor: Any?
 
-    private let doubleTapInterval: CFAbsoluteTime = 0.4
+    /// Window to recognize a second Fn tap as “double”.
+    private let doubleTapInterval: CFAbsoluteTime = 0.45
     private var lastFire: (action: Action, time: CFAbsoluteTime)?
 
     private var lastFnTap: CFAbsoluteTime = 0
     private var fnWasDown = false
+    private var pendingStopWorkItem: DispatchWorkItem?
+    private let fnQueue = DispatchQueue(label: "\(Constants.bundleIdentifier).fn-hotkey")
     private static let fnKeyCode = Int64(kVK_Function) // 63
 
     init(onTrigger: @escaping TriggerHandler) {
@@ -52,6 +58,11 @@ final class GlobalHotkeyManager: @unchecked Sendable {
     }
 
     func stop() {
+        fnQueue.sync {
+            pendingStopWorkItem?.cancel()
+            pendingStopWorkItem = nil
+        }
+
         if let runLoop = tapRunLoop {
             CFRunLoopStop(runLoop)
         }
@@ -142,11 +153,11 @@ final class GlobalHotkeyManager: @unchecked Sendable {
             }
         case .flagsChanged:
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            if let action = handleFnKey(
-                keyCode: keyCode,
-                fnDown: event.flags.contains(.maskSecondaryFn)
-            ) {
-                fire(action)
+            // Some Macs deliver Fn as flags-only with keycode 0 / other codes.
+            // Prefer SecondaryFn flag; also accept the dedicated Fn keycode.
+            let fnDown = event.flags.contains(.maskSecondaryFn)
+            if keyCode == Self.fnKeyCode || fnDown || fnWasDown {
+                handleFnEdge(fnDown: fnDown, sourceKeyCode: keyCode)
             }
         default:
             break
@@ -190,11 +201,9 @@ final class GlobalHotkeyManager: @unchecked Sendable {
                 fire(.toggle)
             }
         case .flagsChanged:
-            if let action = handleFnKey(
-                keyCode: Int64(event.keyCode),
-                fnDown: event.modifierFlags.contains(.function)
-            ) {
-                fire(action)
+            let fnDown = event.modifierFlags.contains(.function)
+            if Int64(event.keyCode) == Self.fnKeyCode || fnDown || fnWasDown {
+                handleFnEdge(fnDown: fnDown, sourceKeyCode: Int64(event.keyCode))
             }
         default:
             break
@@ -215,34 +224,68 @@ final class GlobalHotkeyManager: @unchecked Sendable {
         return hasCommand && hasShift && !hasOption && !hasControl
     }
 
-    /// Double-tap Fn → begin; single-tap Fn → stop.
-    private func handleFnKey(keyCode: Int64, fnDown: Bool) -> Action? {
-        guard keyCode == Self.fnKeyCode else { return nil }
-
+    /// Rising edge: schedule stop; second rising edge within the window → begin.
+    private func handleFnEdge(fnDown: Bool, sourceKeyCode: Int64) {
         let previouslyDown = fnWasDown
         fnWasDown = fnDown
 
         // Rising edge only.
-        guard fnDown, !previouslyDown else { return nil }
+        guard fnDown, !previouslyDown else { return }
 
-        let now = CFAbsoluteTimeGetCurrent()
-        if now - lastFnTap <= doubleTapInterval {
-            lastFnTap = 0
-            return .begin
+        fnQueue.async { [weak self] in
+            guard let self else { return }
+            let now = CFAbsoluteTimeGetCurrent()
+
+            if self.lastFnTap > 0, now - self.lastFnTap <= self.doubleTapInterval {
+                // Double-tap — cancel pending single-tap stop and begin.
+                self.pendingStopWorkItem?.cancel()
+                self.pendingStopWorkItem = nil
+                self.lastFnTap = 0
+                DiagnosticLog.write("fn double-tap → begin (keycode=\(sourceKeyCode))")
+                self.fire(.begin)
+                return
+            }
+
+            self.lastFnTap = now
+            self.pendingStopWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                // Only fire stop if no second tap cleared lastFnTap.
+                guard self.lastFnTap > 0 else { return }
+                self.lastFnTap = 0
+                self.pendingStopWorkItem = nil
+                DiagnosticLog.write("fn single-tap → stop")
+                self.fire(.stop)
+            }
+            self.pendingStopWorkItem = work
+            self.fnQueue.asyncAfter(
+                deadline: .now() + self.doubleTapInterval,
+                execute: work
+            )
         }
-
-        lastFnTap = now
-        return .stop
     }
 
     private func fire(_ action: Action) {
         // Debounce near-simultaneous duplicates from event-tap + NSEvent.
         let now = CFAbsoluteTimeGetCurrent()
         if let lastFire,
-           now - lastFire.time < 0.08,
+           now - lastFire.time < 0.12,
            lastFire.action == action {
             return
         }
+        // begin should win over a stop that raced from the other monitor.
+        if action == .begin,
+           let lastFire,
+           lastFire.action == .stop,
+           now - lastFire.time < 0.2 {
+            // Still allow begin.
+        } else if action == .stop,
+                  let lastFire,
+                  lastFire.action == .begin,
+                  now - lastFire.time < 0.2 {
+            return
+        }
+
         lastFire = (action, now)
         AppLogger.hotkeys.info("Hotkey triggered: \(String(describing: action), privacy: .public)")
         onTrigger(action)

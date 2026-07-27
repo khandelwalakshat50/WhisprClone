@@ -108,8 +108,15 @@ struct SettingsView: View {
                     Text("WhisperKit (Local)").tag(SpeechEngine.whisperKit)
                     Text("Apple Speech").tag(SpeechEngine.appleSpeech)
                 }
-                TextField("Whisper model", text: $store.configuration.whisperModel)
+                TextField(
+                    "Whisper model",
+                    text: $store.configuration.whisperModel,
+                    prompt: Text("openai_whisper-base")
+                )
                     .disabled(store.configuration.speechEngine != .whisperKit)
+                Text("Use a full name like openai_whisper-base (short names like “base” are mapped automatically).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 TextField(
                     "Vocabulary bias (comma-separated)",
                     text: $store.configuration.whisperVocabularyBias,

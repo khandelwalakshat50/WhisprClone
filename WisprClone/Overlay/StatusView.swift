@@ -23,7 +23,7 @@ struct StatusView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(OverlayTheme.statusWord(for: state))
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.white.opacity(0.92))
+                        .foregroundStyle(Color.primary.opacity(0.88))
                         .frame(width: OverlayTheme.statusLabelWidth, alignment: .leading)
 
                     IntelligenceRibbon(

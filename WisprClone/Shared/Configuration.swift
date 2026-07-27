@@ -49,7 +49,7 @@ struct Configuration: Equatable, Sendable {
         geminiModel: Constants.LLM.defaultGeminiModel,
         openAIModel: "gpt-4o-mini",
         groqModel: Constants.LLM.defaultGroqModel,
-        whisperModel: "base",
+        whisperModel: "openai_whisper-base",
         whisperVocabularyBias: "",
         temperature: 0.2,
         ollamaTimeout: Constants.LLM.ollamaTimeoutSeconds,

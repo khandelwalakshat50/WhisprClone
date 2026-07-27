@@ -19,6 +19,7 @@
 		B00000000000000000000210 /* TextInjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000110 /* TextInjector.swift */; };
 		B00000000000000000000211 /* GroqClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000111 /* GroqClient.swift */; };
 		B00000000000000000000246 /* GeminiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000146 /* GeminiClient.swift */; };
+		B00000000000000000000247 /* ProgressiveLLMFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000147 /* ProgressiveLLMFormatter.swift */; };
 		B00000000000000000000212 /* LLMFormattingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000112 /* LLMFormattingService.swift */; };
 		B00000000000000000000213 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000113 /* OllamaClient.swift */; };
 		B00000000000000000000214 /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000114 /* OpenAIClient.swift */; };
@@ -67,6 +68,7 @@
 		B00000000000000000000110 /* TextInjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInjector.swift; sourceTree = "<group>"; };
 		B00000000000000000000111 /* GroqClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroqClient.swift; sourceTree = "<group>"; };
 		B00000000000000000000146 /* GeminiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiClient.swift; sourceTree = "<group>"; };
+		B00000000000000000000147 /* ProgressiveLLMFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveLLMFormatter.swift; sourceTree = "<group>"; };
 		B00000000000000000000112 /* LLMFormattingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMFormattingService.swift; sourceTree = "<group>"; };
 		B00000000000000000000113 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
 		B00000000000000000000114 /* OpenAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIClient.swift; sourceTree = "<group>"; };
@@ -188,6 +190,7 @@
 			children = (
 				B00000000000000000000111 /* GroqClient.swift */,
 				B00000000000000000000146 /* GeminiClient.swift */,
+				B00000000000000000000147 /* ProgressiveLLMFormatter.swift */,
 				B00000000000000000000112 /* LLMFormattingService.swift */,
 				B00000000000000000000113 /* OllamaClient.swift */,
 				B00000000000000000000114 /* OpenAIClient.swift */,
@@ -376,6 +379,7 @@
 				B00000000000000000000210 /* TextInjector.swift in Sources */,
 				B00000000000000000000211 /* GroqClient.swift in Sources */,
 				B00000000000000000000246 /* GeminiClient.swift in Sources */,
+				B00000000000000000000247 /* ProgressiveLLMFormatter.swift in Sources */,
 				B00000000000000000000212 /* LLMFormattingService.swift in Sources */,
 				B00000000000000000000213 /* OllamaClient.swift in Sources */,
 				B00000000000000000000214 /* OpenAIClient.swift in Sources */,

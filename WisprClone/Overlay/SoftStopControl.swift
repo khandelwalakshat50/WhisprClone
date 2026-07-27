@@ -12,15 +12,15 @@ struct SoftStopControl: View {
         Button(action: action) {
             ZStack {
                 Circle()
-                    .fill(Color.white.opacity(hovering ? 0.18 : 0.08))
+                    .fill(Color.primary.opacity(hovering ? 0.12 : 0.06))
                     .overlay {
                         Circle()
-                            .strokeBorder(Color.white.opacity(hovering ? 0.45 : 0.22), lineWidth: 0.5)
+                            .strokeBorder(Color.primary.opacity(hovering ? 0.35 : 0.18), lineWidth: 0.5)
                     }
 
                 Image(systemName: "stop.fill")
                     .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(hovering ? 0.95 : 0.55))
+                    .foregroundStyle(Color.primary.opacity(hovering ? 0.9 : 0.5))
             }
             .frame(width: 28, height: 28)
             .scaleEffect(pressing ? 0.9 : hovering ? 1.06 : 1.0)
@@ -48,19 +48,19 @@ struct StatusGlyph: View {
             case .transcribing, .formatting:
                 Image(systemName: "sparkle")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(Color.primary.opacity(0.8))
             case .injecting:
                 Image(systemName: "arrow.down.to.line.compact")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.85))
+                    .foregroundStyle(Color.primary.opacity(0.8))
             case .success:
                 Image(systemName: "checkmark")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.95))
+                    .foregroundStyle(Color.primary.opacity(0.9))
             case .failure:
                 Image(systemName: "exclamationmark")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .foregroundStyle(Color.primary.opacity(0.55))
             default:
                 Color.clear.frame(width: 28, height: 28)
             }

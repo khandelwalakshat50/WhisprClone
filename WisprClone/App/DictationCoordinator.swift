@@ -24,6 +24,8 @@ final class DictationCoordinator {
     private var pasteTargetApp: NSRunningApplication?
     /// Progressive Whisper while listening (WhisperKit path only).
     private var liveTranscriber: LiveChunkTranscriber?
+    /// Formats each live ASR chunk as it arrives (overlaps LLM with speech).
+    private var progressiveFormatter: ProgressiveLLMFormatter?
 
     /// Cached so the WhisperKit model stays loaded across sessions.
     private var cachedWhisperRecognizer: WhisperKitRecognizer?
@@ -125,8 +127,9 @@ final class DictationCoordinator {
             DiagnosticLog.write("cancel stuck session from \(recordingState.state)")
             cancelActiveSession(resetState: true)
         case (.begin, .formatting), (.begin, .transcribing), (.begin, .injecting):
-            DiagnosticLog.write("restart — cancel stuck \(recordingState.state)")
-            beginSession()
+            // Don't abort an in-flight refine with a mistaken double-fn —
+            // ignore begin until idle/success/failure.
+            DiagnosticLog.write("hotkey begin ignored during \(recordingState.state)")
         default:
             DiagnosticLog.write("hotkey ignored for current state")
             break
@@ -154,19 +157,36 @@ final class DictationCoordinator {
             do {
                 try await self.runSession()
             } catch is CancellationError {
+                DiagnosticLog.write("session cancelled")
                 self.recordingState.update(.idle)
-            } catch let error as AppError {
-                AppLogger.pipeline.error("Session failed: \(error.localizedDescription, privacy: .public)")
-                DiagnosticLog.write("session failed: \(error.localizedDescription)")
-                _ = self.recorder.stop()
-                self.recordingState.update(.failure(error.localizedDescription))
+            } catch let error as AppError where error == .cancelled {
+                DiagnosticLog.write("session cancelled (AppError)")
+                self.recordingState.update(.idle)
             } catch {
+                // Task cancellation sometimes bridges as a generic Error.
+                if Task.isCancelled || Self.isCancellation(error) {
+                    DiagnosticLog.write("session cancelled (bridged)")
+                    self.recordingState.update(.idle)
+                    return
+                }
                 AppLogger.pipeline.error("Session failed: \(error.localizedDescription, privacy: .public)")
                 DiagnosticLog.write("session failed: \(error.localizedDescription)")
                 _ = self.recorder.stop()
-                self.recordingState.update(.failure(error.localizedDescription))
+                if let app = error as? AppError {
+                    self.recordingState.update(.failure(app.localizedDescription))
+                } else {
+                    self.recordingState.update(.failure(error.localizedDescription))
+                }
             }
         }
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+        let message = error.localizedDescription.lowercased()
+        return message.contains("cancellationerror") || message.contains("cancelled")
     }
 
     private static func frontmostAppExcludingSelf() -> NSRunningApplication? {
@@ -203,6 +223,7 @@ final class DictationCoordinator {
         _ = recorder.stop()
         vad = nil
         liveTranscriber = nil
+        progressiveFormatter = nil
         overlayPresentation.resetAudioLevel()
         speechStartedAt = nil
         if resetState {
@@ -242,6 +263,18 @@ final class DictationCoordinator {
         let whisper = useLiveWhisper ? whisperRecognizer(for: config.whisperModel) : nil
         let live = whisper.map { LiveChunkTranscriber(recognizer: $0) }
         liveTranscriber = live
+
+        // Start LLM work on each ASR chunk while the user is still speaking.
+        // Full-transcript formatting remains the fallback if this doesn't cover.
+        let earlyFormatter = makeFormattingService(
+            config: config,
+            utteranceDurationSeconds: 0
+        )
+        let progressive = ProgressiveLLMFormatter(formatter: earlyFormatter)
+        progressiveFormatter = progressive
+        live?.onUsableChunk = { [weak progressive] index, text in
+            progressive?.ingest(index: index, text: text)
+        }
 
         let detector = VoiceActivityDetector(
             onLevel: { [weak overlayPresentation] rms in
@@ -288,6 +321,7 @@ final class DictationCoordinator {
         defer {
             try? FileManager.default.removeItem(at: fileURL)
             liveTranscriber = nil
+            progressiveFormatter = nil
         }
 
         let processingStart = ContinuousClock.now
@@ -331,38 +365,31 @@ final class DictationCoordinator {
             return
         }
 
-        // Format
+        // Format — prefer progressive LLM that already ran on live ASR chunks.
         recordingState.update(.formatting)
         let listenSeconds = speechStartedAt.map { AppLogger.elapsedMilliseconds(since: $0) / 1000 } ?? 0
-        let geminiKey = configurationStore.resolvedGeminiKey() ?? ""
-        let openAIKey = configurationStore.resolvedOpenAIKey() ?? ""
-        let groqKey = configurationStore.resolvedGroqKey() ?? ""
-        let formatter = LLMFormattingService(
-            mode: config.formattingMode,
-            ollama: OllamaClient(
-                model: config.ollamaModel,
-                timeout: config.ollamaTimeout
-            ),
-            gemini: geminiKey.isEmpty
-                ? nil
-                : GeminiClient(apiKey: geminiKey, model: config.geminiModel, temperature: config.temperature),
-            groq: groqKey.isEmpty
-                ? nil
-                : GroqClient(apiKey: groqKey, model: config.groqModel, temperature: config.temperature),
-            openAI: openAIKey.isEmpty
-                ? nil
-                : OpenAIClient(apiKey: openAIKey, model: config.openAIModel, temperature: config.temperature),
-            recordUsage: { [weak usageStore] provider in
-                await usageStore?.record(provider)
-            },
-            utteranceDurationSeconds: listenSeconds
-        )
         let formattingStart = ContinuousClock.now
-        let formatResult = try await AppLogger.measure("llm.format", logger: AppLogger.llm) {
-            try await formatter.formatDetailed(text: cleanedTranscript)
+
+        let formatResult: FormatResult
+        if let progressive = progressiveFormatter, progressive.didStart,
+           let progressiveResult = await progressive.finish(),
+           Self.hasMeaningfulSpeech(progressiveResult.text) {
+            formatResult = progressiveResult
+            delayNotes.append(contentsOf: progressiveResult.notes)
+            DiagnosticLog.write(
+                "using progressive LLM chars=\(progressiveResult.text.count) provider=\(progressiveResult.provider.rawValue)"
+            )
+        } else {
+            let formatter = makeFormattingService(
+                config: config,
+                utteranceDurationSeconds: listenSeconds
+            )
+            formatResult = try await AppLogger.measure("llm.format", logger: AppLogger.llm) {
+                try await formatter.formatDetailed(text: cleanedTranscript)
+            }
+            delayNotes.append(contentsOf: formatResult.notes)
         }
         timing.formattingSeconds = AppLogger.elapsedMilliseconds(since: formattingStart) / 1000
-        delayNotes.append(contentsOf: formatResult.notes)
 
         let formatted = formatResult.text
 
@@ -524,6 +551,35 @@ final class DictationCoordinator {
         recordingStopRequested = true
         recordingStopContinuation?.resume()
         recordingStopContinuation = nil
+    }
+
+    private func makeFormattingService(
+        config: Configuration,
+        utteranceDurationSeconds: TimeInterval
+    ) -> LLMFormattingService {
+        let geminiKey = configurationStore.resolvedGeminiKey() ?? ""
+        let openAIKey = configurationStore.resolvedOpenAIKey() ?? ""
+        let groqKey = configurationStore.resolvedGroqKey() ?? ""
+        return LLMFormattingService(
+            mode: config.formattingMode,
+            ollama: OllamaClient(
+                model: config.ollamaModel,
+                timeout: config.ollamaTimeout
+            ),
+            gemini: geminiKey.isEmpty
+                ? nil
+                : GeminiClient(apiKey: geminiKey, model: config.geminiModel, temperature: config.temperature),
+            groq: groqKey.isEmpty
+                ? nil
+                : GroqClient(apiKey: groqKey, model: config.groqModel, temperature: config.temperature),
+            openAI: openAIKey.isEmpty
+                ? nil
+                : OpenAIClient(apiKey: openAIKey, model: config.openAIModel, temperature: config.temperature),
+            recordUsage: { [weak usageStore] provider in
+                await usageStore?.record(provider)
+            },
+            utteranceDurationSeconds: utteranceDurationSeconds
+        )
     }
 
     private static func transcriptionModelLabel(for config: Configuration) -> String {

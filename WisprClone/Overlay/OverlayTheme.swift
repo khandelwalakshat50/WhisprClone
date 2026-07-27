@@ -1,19 +1,22 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
-/// Monochrome HUD language — grey, white, black only.
+/// HUD language — frosted glass capsule with metallic silver accents.
 enum OverlayTheme {
     // MARK: Geometry
 
-    static let width: CGFloat = 286
-    static let height: CGFloat = 66
+    static let width: CGFloat = 296
+    static let height: CGFloat = 70
     static var panelWidth: CGFloat { width }
     static var panelHeight: CGFloat { height }
 
-    static let cornerRadius: CGFloat = 33
-    static let contentInset: CGFloat = 16
-    static let orbSize: CGFloat = 22
-    static let ribbonWidth: CGFloat = 152
-    static let ribbonHeight: CGFloat = 26
+    static let cornerRadius: CGFloat = 35
+    static let contentInset: CGFloat = 14
+    static let orbSize: CGFloat = 34
+    static let ribbonWidth: CGFloat = 148
+    static let ribbonHeight: CGFloat = 28
     static let statusLabelWidth: CGFloat = 92
 
     // MARK: Motion
@@ -23,9 +26,17 @@ enum OverlayTheme {
         static let audio = Animation.spring(response: 0.24, dampingFraction: 0.78)
         static let breathDuration: TimeInterval = 2.0
         static let ribbonFPS: Double = 60
+        /// Full orbit period for the loading ring (seconds).
+        static let ringOrbitDuration: TimeInterval = 3.6
     }
 
-    // MARK: Monochrome palette
+    // MARK: Metallic silver palette
+
+    static let silverBright = Color(white: 0.96)
+    static let silver = Color(white: 0.78)
+    static let silverMid = Color(white: 0.58)
+    static let silverDark = Color(white: 0.38)
+    static let silverDeep = Color(white: 0.22)
 
     static let white = Color.white
     static let lightGrey = Color(white: 0.78)
@@ -33,11 +44,33 @@ enum OverlayTheme {
     static let darkGrey = Color(white: 0.28)
     static let black = Color.black
 
+    static func lerp(_ a: Color, _ b: Color, _ t: CGFloat) -> Color {
+        let t = min(max(t, 0), 1)
+        #if canImport(AppKit)
+        var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        let ans = NSColor(a).usingColorSpace(.deviceRGB) ?? NSColor.white
+        let bns = NSColor(b).usingColorSpace(.deviceRGB) ?? NSColor.white
+        ans.getRed(&ar, green: &ag, blue: &ab, alpha: &aa)
+        bns.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        return Color(
+            red: Double(ar + (br - ar) * t),
+            green: Double(ag + (bg - ag) * t),
+            blue: Double(ab + (bb - ab) * t),
+            opacity: Double(aa + (ba - aa) * t)
+        )
+        #else
+        return t < 0.5 ? a : b
+        #endif
+    }
+
     static func accent(for state: RecordingState) -> Color {
         switch state {
-        case .listening, .detectingSpeech: return lightGrey
-        case .transcribing, .formatting, .injecting: return midGrey
-        case .success: return white
+        case .listening, .detectingSpeech: return silverBright
+        case .transcribing: return silver
+        case .formatting: return silverMid
+        case .injecting: return silverBright
+        case .success: return silverBright
         case .failure: return midGrey
         case .idle: return .clear
         }
@@ -46,7 +79,10 @@ enum OverlayTheme {
     static func secondaryAccent(for state: RecordingState) -> Color {
         switch state {
         case .idle: return .clear
-        default: return darkGrey
+        case .listening, .detectingSpeech: return silver
+        case .transcribing, .formatting: return silverDark
+        case .injecting, .success: return silverMid
+        case .failure: return darkGrey
         }
     }
 

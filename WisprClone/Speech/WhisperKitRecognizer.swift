@@ -226,25 +226,85 @@ final class WhisperKitRecognizer: SpeechRecognizing, @unchecked Sendable {
             return existing
         }
 
+        let resolved = Self.resolveModelName(modelName)
+        DiagnosticLog.write("whisper load model=\(modelName) resolved=\(resolved)")
+
         do {
-            let created = try await WhisperKit(
-                model: modelName,
-                downloadBase: Self.modelsDirectory,
-                prewarm: true,
-                load: true
-            )
+            let created: WhisperKit
+            if let localFolder = Self.localModelFolder(for: resolved) {
+                // Skip Hub search — "base" matches multiple remote folders and throws.
+                AppLogger.speech.info(
+                    "WhisperKit loading local model at \(localFolder.lastPathComponent, privacy: .public)"
+                )
+                created = try await WhisperKit(
+                    downloadBase: Self.modelsDirectory,
+                    modelFolder: localFolder.path,
+                    tokenizerFolder: Self.modelsDirectory,
+                    prewarm: true,
+                    load: true,
+                    download: false
+                )
+            } else {
+                created = try await WhisperKit(
+                    model: resolved,
+                    downloadBase: Self.modelsDirectory,
+                    prewarm: true,
+                    load: true
+                )
+            }
             let box = WhisperKitBox(kit: created)
             let ready = storage.withLock { current -> WhisperKitBox in
                 if let current { return current }
                 current = box
                 return box
             }
-            AppLogger.speech.info("WhisperKit model loaded: \(self.modelName, privacy: .public)")
+            AppLogger.speech.info("WhisperKit model loaded: \(resolved, privacy: .public)")
             return ready
         } catch {
             AppLogger.speech.error("WhisperKit load failed: \(error.localizedDescription, privacy: .public)")
+            DiagnosticLog.write("whisper load failed: \(error.localizedDescription)")
             throw AppError.transcriptionFailed(error.localizedDescription)
         }
+    }
+
+    /// Map short Preferences names (`base`) to WhisperKit hub folder names.
+    private static func resolveModelName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "openai_whisper-base" }
+        if trimmed.hasPrefix("openai_whisper-") { return trimmed }
+
+        switch trimmed.lowercased() {
+        case "tiny": return "openai_whisper-tiny"
+        case "tiny.en": return "openai_whisper-tiny.en"
+        case "base": return "openai_whisper-base"
+        case "base.en": return "openai_whisper-base.en"
+        case "small": return "openai_whisper-small"
+        case "small.en": return "openai_whisper-small.en"
+        case "medium": return "openai_whisper-medium"
+        case "medium.en": return "openai_whisper-medium.en"
+        case "large", "large-v3": return "openai_whisper-large-v3"
+        case "large-v3-turbo", "turbo": return "openai_whisper-large-v3-turbo"
+        default:
+            if trimmed.lowercased().hasPrefix("whisper-") {
+                return "openai_\(trimmed.replacingOccurrences(of: " ", with: "-"))"
+            }
+            return "openai_whisper-\(trimmed)"
+        }
+    }
+
+    private static func localModelFolder(for resolvedName: String) -> URL? {
+        let url = modelsDirectory
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("argmaxinc", isDirectory: true)
+            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
+            .appendingPathComponent(resolvedName, isDirectory: true)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            return nil
+        }
+        let encoder = url.appendingPathComponent("AudioEncoder.mlmodelc", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: encoder.path) else { return nil }
+        return url
     }
     #endif
 }
