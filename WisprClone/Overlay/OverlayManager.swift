@@ -18,11 +18,17 @@ final class OverlayPresentationModel: ObservableObject {
     }
 
     func updateAudioLevel(rms: Float) {
-        // Slightly more sensitive mapping so quiet laptop mics still move the ribbon.
-        let normalized = min(max((CGFloat(rms) - 0.001) * 28, 0.04), 1)
-        audioLevel = normalized > audioLevel
-            ? audioLevel * 0.22 + normalized * 0.78
-            : audioLevel * 0.75 + normalized * 0.25
+        // Fast attack / quick release so the ribbon tracks speech with minimal lag.
+        let normalized = min(max((CGFloat(rms) - 0.0008) * 34, 0.04), 1)
+        let next: CGFloat
+        if normalized > audioLevel {
+            next = audioLevel * 0.12 + normalized * 0.88
+        } else {
+            next = audioLevel * 0.42 + normalized * 0.58
+        }
+        // Skip tiny updates to reduce SwiftUI churn without feeling sticky.
+        guard abs(next - audioLevel) >= 0.004 else { return }
+        audioLevel = next
     }
 
     func resetAudioLevel() {

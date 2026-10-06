@@ -5,6 +5,7 @@ import Security
 /// Values never touch UserDefaults. `.env` can seed Keychain via `ConfigurationStore`.
 enum KeychainStore {
     enum Key: String {
+        case deepgramAPIKey = "deepgram_api_key"
         case geminiAPIKey = "gemini_api_key"
         case openAIAPIKey = "openai_api_key"
         case groqAPIKey = "groq_api_key"

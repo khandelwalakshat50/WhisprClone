@@ -4,6 +4,9 @@ import Foundation
 import os
 
 /// Preferred insertion path: clipboard swap → synthesize ⌘V → restore clipboard.
+///
+/// For multi-line text, also publishes HTML so Gmail/Chrome contenteditable
+/// keeps real line breaks (plain `\n` is often flattened to spaces there).
 struct ClipboardInjection {
     private let logger = Logger(subsystem: Constants.bundleIdentifier, category: "ClipboardInjection")
 
@@ -12,23 +15,20 @@ struct ClipboardInjection {
         let saved = pasteboard.backup()
 
         pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else {
+        guard Self.write(text, to: pasteboard) else {
             saved.restore(to: pasteboard)
             throw AppError.injectionFailed("Could not write pasteboard")
         }
         let ourChangeCount = pasteboard.changeCount
 
         try Self.postCommandV()
-        // Give the target app time to service ⌘V while our text is still
-        // on the pasteboard; restoring too early pastes the OLD clipboard.
+        // Only need a short settle before we return; clipboard restore is deferred.
         try await Task.sleep(nanoseconds: Constants.Injection.pasteDeliveryNanoseconds)
-        logger.info("Clipboard injection completed (\(text.count) chars)")
+        logger.info("Clipboard injection completed (\(text.count) chars, newlines=\(text.filter { $0 == "\n" }.count))")
 
-        // Restore the user's clipboard off the critical path, and only if
-        // nobody has written to the pasteboard since we did. The delay scales
-        // with length: large transcripts (and apps like Chrome/Electron that
-        // read the pasteboard asynchronously) need longer before restore, or
-        // the paste silently lands the OLD clipboard content.
+        // Restore the user's clipboard off the critical path. Chrome/Electron
+        // may read the pasteboard asynchronously, so keep a longer restore delay
+        // here without blocking the dictation UI.
         let restoreDelay = Self.restoreDelayNanoseconds(forCharacters: text.count)
         let log = logger
         Task.detached(priority: .utility) {
@@ -38,6 +38,44 @@ struct ClipboardInjection {
             saved.restore(to: pb)
             log.info("Original clipboard restored")
         }
+    }
+
+    /// Leaves the text on the clipboard (no ⌘V, no restore) so the user can paste manually.
+    static func copyOnly(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        _ = write(text, to: pasteboard)
+    }
+
+    /// Plain string always; HTML when there are newlines (Gmail / Docs / Slack web).
+    private static func write(_ text: String, to pasteboard: NSPasteboard) -> Bool {
+        if text.contains("\n") {
+            let html = htmlFragment(from: text)
+            pasteboard.declareTypes([.html, .string], owner: nil)
+            let htmlOK = pasteboard.setString(html, forType: .html)
+            let plainOK = pasteboard.setString(text, forType: .string)
+            return htmlOK && plainOK
+        }
+        return pasteboard.setString(text, forType: .string)
+    }
+
+    private static func htmlFragment(from text: String) -> String {
+        let lines = text.components(separatedBy: "\n")
+        let body = lines.map { line -> String in
+            if line.isEmpty { return "<div><br></div>" }
+            return "<div>\(escapeHTML(line))</div>"
+        }.joined()
+        return """
+        <!DOCTYPE html><html><body><!--StartFragment-->\(body)<!--EndFragment--></body></html>
+        """
+    }
+
+    private static func escapeHTML(_ string: String) -> String {
+        string
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     /// Base delay plus ~1 ms per character, clamped to a sane ceiling so the

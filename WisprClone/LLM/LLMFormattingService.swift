@@ -6,6 +6,8 @@ struct FormatResult: Sendable {
     let text: String
     let provider: LLMProvider
     let notes: [String]
+    var intent: DictationIntent = .plain
+    var level: FormattingLevel = .preserve
 }
 
 /// Routes formatting across Gemini / Groq / OpenAI / Local / Auto Fallback.
@@ -21,47 +23,134 @@ struct LLMFormattingService: TextFormatter {
     var utteranceDurationSeconds: TimeInterval = 0
 
     func format(text: String) async throws -> String {
-        try await formatDetailed(text: text).text
+        try await formatDetailed(FormattingRequest(text: text)).text
     }
 
     func formatDetailed(text: String) async throws -> FormatResult {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Callers should skip empty input; never hit the network for blank text.
+        try await formatDetailed(FormattingRequest(text: text, utteranceDurationSeconds: utteranceDurationSeconds))
+    }
+
+    func formatDetailed(_ request: FormattingRequest) async throws -> FormatResult {
+        var request = request
+        if request.utteranceDurationSeconds <= 0, utteranceDurationSeconds > 0 {
+            request.utteranceDurationSeconds = utteranceDurationSeconds
+        }
+
+        let trimmed = request.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return FormatResult(text: "", provider: .ollama, notes: ["skipped: empty transcript"])
         }
 
-        if Self.looksAlreadyClean(trimmed) {
+        let app = AppFormattingProfile.resolve(
+            bundleID: request.targetBundleID,
+            appName: request.targetAppName,
+            windowTitle: request.targetWindowTitle,
+            siteHint: request.siteHint
+        )
+        let analysis = DictationIntelligence.analyze(
+            transcript: trimmed,
+            app: app,
+            asrConfidence: request.asrConfidence
+        )
+
+        if analysis.skipLLM {
+            DiagnosticLog.write(
+                "llm skip intelligence intent=\(analysis.intent.rawValue) level=\(analysis.level.rawValue) chars=\(trimmed.count)"
+            )
+            return FormatResult(
+                text: trimmed,
+                provider: .groq,
+                notes: ["skipped LLM: high-confidence / already clean"],
+                intent: analysis.intent,
+                level: analysis.level
+            )
+        }
+
+        // Legacy clean check as a secondary fast path for plain preserve.
+        if analysis.level == .preserve,
+           analysis.intent == .plain || analysis.intent == .chat,
+           Self.looksAlreadyClean(trimmed) {
             DiagnosticLog.write("llm skip already-clean chars=\(trimmed.count)")
             return FormatResult(
                 text: trimmed,
                 provider: .groq,
-                notes: ["skipped LLM: transcript already clean"]
+                notes: ["skipped LLM: transcript already clean"],
+                intent: analysis.intent,
+                level: analysis.level
             )
         }
+
+        let systemPrompt = LLMPromptLibrary.systemPrompt(
+            level: analysis.level,
+            intent: analysis.intent,
+            app: app
+        )
+        let userMessage = LLMPromptLibrary.userMessage(
+            transcript: trimmed,
+            appName: request.targetAppName,
+            level: analysis.level,
+            intent: analysis.intent,
+            sessionSummary: request.sessionSummary,
+            personalTerms: request.personalTerms
+        )
+
+        DiagnosticLog.write(
+            "llm intelligence intent=\(analysis.intent.rawValue) level=\(analysis.level.rawValue) app=\(app.id)"
+        )
 
         let pieces = Self.splitForFormatting(trimmed, maxCharacters: Constants.Formatting.maxChunkCharacters)
         if pieces.count == 1 {
-            return try await formatSingle(
+            var result = try await formatSingle(
                 pieces[0],
                 routingTranscript: trimmed,
-                forceShortForm: false,
-                extraNotes: []
+                preferLongFormOverride: nil,
+                extraNotes: [
+                    "intent=\(analysis.intent.rawValue)",
+                    "level=\(analysis.level.rawValue)",
+                    "app=\(app.id)"
+                ],
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                durationSeconds: request.utteranceDurationSeconds
             )
+            result.intent = analysis.intent
+            result.level = analysis.level
+            return Self.finalizeOutput(result, original: trimmed)
         }
 
-        // Long dictation: format sentence-bounded chunks in parallel on the
-        // fast (Groq-first) path — each piece is small even if the full
-        // utterance would have been routed to Gemini.
-        var notes = ["LLM split into \(pieces.count) chunks for long dictation (parallel Groq-first)"]
+        // Long dictation: parallel long-form-route pieces (OpenAI first, then Gemini).
+        // Per-piece prompts stay Level-1 preserve to avoid structural drift mid-split.
+        var notes = [
+            "LLM split into \(pieces.count) chunks for long dictation (parallel OpenAI-first)",
+            "intent=\(analysis.intent.rawValue)",
+            "level=\(analysis.level.rawValue)"
+        ]
+        let pieceSystem = LLMPromptLibrary.systemPrompt(level: .preserve, intent: analysis.intent, app: app)
+        let appName = request.targetAppName
+        let sessionSummary = request.sessionSummary
+        let personalTerms = request.personalTerms
+        let durationSeconds = request.utteranceDurationSeconds
+        let pieceIntent = analysis.intent
         let results: [(Int, FormatResult)] = try await withThrowingTaskGroup(of: (Int, FormatResult).self) { group in
             for (i, piece) in pieces.enumerated() {
+                let pieceText = piece
                 group.addTask {
+                    let pieceUser = LLMPromptLibrary.userMessage(
+                        transcript: pieceText,
+                        appName: appName,
+                        level: .preserve,
+                        intent: pieceIntent,
+                        sessionSummary: sessionSummary,
+                        personalTerms: personalTerms
+                    )
                     let part = try await self.formatSingle(
-                        piece,
-                        routingTranscript: piece,
-                        forceShortForm: true,
-                        extraNotes: []
+                        pieceText,
+                        routingTranscript: pieceText,
+                        preferLongFormOverride: true,
+                        extraNotes: [],
+                        systemPrompt: pieceSystem,
+                        userMessage: pieceUser,
+                        durationSeconds: durationSeconds
                     )
                     return (i, part)
                 }
@@ -84,45 +173,135 @@ struct LLMFormattingService: TextFormatter {
             }
         }
 
-        return FormatResult(
-            text: formattedParts.joined(separator: "\n\n"),
-            provider: provider,
-            notes: notes
+        return Self.finalizeOutput(
+            FormatResult(
+                text: formattedParts.joined(separator: "\n\n"),
+                provider: provider,
+                notes: notes,
+                intent: analysis.intent,
+                level: analysis.level
+            ),
+            original: trimmed
         )
+    }
+
+    /// Drop assistant-style answers that inflate a dictated question into a reply.
+    private static func finalizeOutput(_ result: FormatResult, original: String) -> FormatResult {
+        let guarded = rejectAssistantAnswer(original: original, formatted: result.text, level: result.level)
+        guard guarded != result.text else { return result }
+        DiagnosticLog.write(
+            "llm rejected answer expansion in=\(original.count) out=\(result.text.count) → kept \(guarded.count)"
+        )
+        return FormatResult(
+            text: guarded,
+            provider: result.provider,
+            notes: result.notes + ["rejected LLM answer expansion; kept transcript polish only"],
+            intent: result.intent,
+            level: result.level
+        )
+    }
+
+    /// If the model answered a dictated question, fall back to a light local polish of the transcript.
+    private static func rejectAssistantAnswer(
+        original: String,
+        formatted: String,
+        level: FormattingLevel
+    ) -> String {
+        let source = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = formatted.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, !output.isEmpty else { return formatted }
+        // Explicit rewrite may legitimately expand — still block pure Q→A.
+        let lowerOut = output.lowercased()
+        let lowerIn = source.lowercased()
+
+        let assistantOpeners = [
+            "sure,", "sure!", "of course", "absolutely", "here's", "here is", "here are",
+            "the answer is", "you can ", "you should ", "you could ", "i'd recommend",
+            "i recommend", "let me explain", "let me help", "to do this", "to solve this",
+            "the solution is", "try this", "one way to", "there are several"
+        ]
+        let startsLikeAssistant = assistantOpeners.contains { lowerOut.hasPrefix($0) }
+
+        let looksLikeQuestion =
+            source.contains("?")
+            || lowerIn.hasPrefix("how ")
+            || lowerIn.hasPrefix("what ")
+            || lowerIn.hasPrefix("why ")
+            || lowerIn.hasPrefix("when ")
+            || lowerIn.hasPrefix("where ")
+            || lowerIn.hasPrefix("who ")
+            || lowerIn.hasPrefix("can you ")
+            || lowerIn.hasPrefix("could you ")
+            || lowerIn.hasPrefix("please ")
+            || lowerIn.contains(" how do i ")
+            || lowerIn.contains(" how can i ")
+            || lowerIn.contains(" what is ")
+            || lowerIn.contains(" what's ")
+
+        let expandedFar = output.count > max(Int(Double(source.count) * 1.55) + 48, source.count + 80)
+        let muchLonger = output.count > source.count * 2 + 60
+
+        if startsLikeAssistant && (looksLikeQuestion || muchLonger) {
+            return lightLocalPolish(source)
+        }
+        if level != .rewrite, looksLikeQuestion, expandedFar {
+            return lightLocalPolish(source)
+        }
+        if level != .rewrite, muchLonger, looksLikeQuestion {
+            return lightLocalPolish(source)
+        }
+        return formatted
+    }
+
+    private static func lightLocalPolish(_ text: String) -> String {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while t.contains("  ") { t = t.replacingOccurrences(of: "  ", with: " ") }
+        guard let first = t.first else { return t }
+        return first.uppercased() + t.dropFirst()
     }
 
     private func formatSingle(
         _ trimmed: String,
         routingTranscript: String,
-        forceShortForm: Bool,
-        extraNotes: [String]
+        preferLongFormOverride: Bool?,
+        extraNotes: [String],
+        systemPrompt: String,
+        userMessage: String,
+        durationSeconds: TimeInterval
     ) async throws -> FormatResult {
         var notes = extraNotes
         let result: String
         let provider: LLMProvider
+        let duration = durationSeconds > 0 ? durationSeconds : utteranceDurationSeconds
 
         switch mode {
         case .localOnly:
-            result = try await ollama.format(text: trimmed)
+            result = try await ollama.format(text: trimmed, systemPrompt: systemPrompt, userMessage: userMessage)
             provider = .ollama
         case .geminiOnly:
             guard let gemini else { throw AppError.notConfigured("Gemini API Key Missing") }
-            result = try await gemini.format(text: trimmed)
+            result = try await gemini.format(text: trimmed, systemPrompt: systemPrompt, userMessage: userMessage)
             provider = .gemini
         case .groqOnly:
             guard let groq else { throw AppError.notConfigured("Groq API Key Missing") }
-            result = try await groq.format(text: trimmed)
+            result = try await groq.format(text: trimmed, systemPrompt: systemPrompt, userMessage: userMessage)
             provider = .groq
         case .openAIOnly:
             guard let openAI else { throw AppError.notConfigured("OpenAI API Key Missing") }
-            result = try await openAI.format(text: trimmed)
+            result = try await openAI.format(text: trimmed, systemPrompt: systemPrompt, userMessage: userMessage)
             provider = .openAI
         case .autoFallback:
-            let preferGemini = !forceShortForm && Self.isLongForm(
+            let longForm = preferLongFormOverride ?? Self.isLongForm(
                 transcript: routingTranscript,
-                durationSeconds: utteranceDurationSeconds
+                durationSeconds: duration
             )
-            (result, provider, notes) = try await autoFormat(trimmed, preferGeminiFirst: preferGemini)
+            (result, provider, notes) = try await autoFormat(
+                trimmed,
+                longForm: longForm,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage,
+                durationSeconds: duration
+            )
             notes = extraNotes + notes
         }
 
@@ -130,9 +309,7 @@ struct LLMFormattingService: TextFormatter {
         return FormatResult(text: Self.sanitize(result), provider: provider, notes: notes)
     }
 
-    /// Very long captures → Gemini first (accuracy). Medium/short → Groq first (speed).
-    /// Prefer the mic-capture clock when available so a dense short phrase
-    /// does not get routed to slower Gemini.
+    /// Longer than ~12s → OpenAI first. Shorter → Groq first.
     static func isLongForm(transcript: String, durationSeconds: TimeInterval) -> Bool {
         if durationSeconds > Constants.Formatting.longFormAudioSeconds {
             return true
@@ -140,7 +317,6 @@ struct LLMFormattingService: TextFormatter {
         if durationSeconds > 0 {
             return false
         }
-        // Duration unknown — use text proxies (high bars so medium text stays Groq).
         let words = transcript
             .split { $0.isWhitespace || $0.isNewline }
             .filter { !$0.isEmpty }
@@ -211,7 +387,6 @@ struct LLMFormattingService: TextFormatter {
                 let end = next
                 let piece = text[start..<end].trimmingCharacters(in: .whitespacesAndNewlines)
                 if !piece.isEmpty { result.append(piece) }
-                // Skip whitespace after the terminator.
                 var j = next
                 while j < text.endIndex, text[j].isWhitespace {
                     j = text.index(after: j)
@@ -242,7 +417,6 @@ struct LLMFormattingService: TextFormatter {
             }
         }
 
-        // Models sometimes reply with meta text instead of staying silent.
         let lower = output.lowercased()
         if lower.contains("no text to process")
             || lower == "no text"
@@ -254,94 +428,119 @@ struct LLMFormattingService: TextFormatter {
         return output
     }
 
-    /// Auto order: Gemini-first (long) or Groq-first (short), then the other, OpenAI, Ollama.
+    /// Auto order — long: OpenAI → Groq → Gemini; short: Groq → OpenAI → Gemini; then Ollama.
     private func autoFormat(
         _ text: String,
-        preferGeminiFirst: Bool
+        longForm: Bool,
+        systemPrompt: String,
+        userMessage: String,
+        durationSeconds: TimeInterval
     ) async throws -> (String, LLMProvider, [String]) {
         var notes: [String] = []
         let words = text.split { $0.isWhitespace || $0.isNewline }.filter { !$0.isEmpty }.count
-        if preferGeminiFirst {
+        if longForm {
             notes.append(
                 String(
-                    format: "Auto route: long-form (%.1fs / %d words) → Gemini first",
-                    utteranceDurationSeconds,
+                    format: "Auto route: long-form (%.1fs / %d words) → OpenAI first",
+                    durationSeconds,
                     words
                 )
             )
             DiagnosticLog.write(
-                String(format: "format route=gemini-first duration=%.1fs words=%d", utteranceDurationSeconds, words)
+                String(format: "format route=openai-first duration=%.1fs words=%d", durationSeconds, words)
             )
         } else {
             notes.append(
                 String(
                     format: "Auto route: short-form (%.1fs / %d words) → Groq first",
-                    utteranceDurationSeconds,
+                    durationSeconds,
                     words
                 )
             )
             DiagnosticLog.write(
-                String(format: "format route=groq-first duration=%.1fs words=%d", utteranceDurationSeconds, words)
+                String(format: "format route=groq-first duration=%.1fs words=%d", durationSeconds, words)
             )
         }
 
-        let cloudOrder: [LLMProvider] = preferGeminiFirst
-            ? [.gemini, .groq, .openAI]
-            : [.groq, .gemini, .openAI]
+        // Gemini is last in both routes — it is the slowest provider in practice.
+        let cloudOrder: [LLMProvider] = longForm
+            ? [.openAI, .groq, .gemini]
+            : [.groq, .openAI, .gemini]
 
         for provider in cloudOrder {
+            let client: (any TextFormatter)?
+            let name: String
             switch provider {
-            case .gemini:
-                if let gemini {
-                    do {
-                        return (try await gemini.format(text: text), .gemini, notes)
-                    } catch let error where Self.shouldFallback(error) {
-                        notes.append("Gemini unavailable (\(Self.shortReason(error))); tried next provider")
-                        AppLogger.llm.warning(
-                            "Gemini unavailable; trying next — \(error.localizedDescription, privacy: .public)"
-                        )
-                    }
-                } else {
-                    notes.append("Gemini not configured; tried next provider")
-                }
-            case .groq:
-                if let groq {
-                    do {
-                        return (try await groq.format(text: text), .groq, notes)
-                    } catch let error where Self.shouldFallback(error) {
-                        notes.append("Groq unavailable (\(Self.shortReason(error))); tried next provider")
-                        AppLogger.llm.warning(
-                            "Groq unavailable; trying next — \(error.localizedDescription, privacy: .public)"
-                        )
-                    }
-                } else {
-                    notes.append("Groq not configured; tried next provider")
-                }
-            case .openAI:
-                if let openAI {
-                    do {
-                        return (try await openAI.format(text: text), .openAI, notes)
-                    } catch let error where Self.shouldFallback(error) {
-                        notes.append("OpenAI unavailable (\(Self.shortReason(error))); tried Ollama")
-                        AppLogger.llm.warning(
-                            "OpenAI unavailable; trying Ollama — \(error.localizedDescription, privacy: .public)"
-                        )
-                    }
-                } else {
-                    notes.append("OpenAI not configured; tried Ollama")
-                }
-            case .ollama:
-                break
+            case .gemini: client = gemini; name = "Gemini"
+            case .groq: client = groq; name = "Groq"
+            case .openAI: client = openAI; name = "OpenAI"
+            case .ollama: continue
+            }
+            guard let client else {
+                notes.append("\(name) not configured; tried next provider")
+                continue
+            }
+            let started = ContinuousClock.now
+            do {
+                let output = try await Self.format(
+                    with: client,
+                    text: text,
+                    systemPrompt: systemPrompt,
+                    userMessage: userMessage
+                )
+                DiagnosticLog.write(
+                    String(format: "llm %@ ok %.2fs", name, AppLogger.elapsedMilliseconds(since: started) / 1000)
+                )
+                return (output, provider, notes)
+            } catch let error where Self.shouldFallback(error) {
+                notes.append("\(name) unavailable (\(Self.shortReason(error))); tried next provider")
+                DiagnosticLog.write(
+                    String(
+                        format: "llm %@ failed after %.2fs: %@",
+                        name,
+                        AppLogger.elapsedMilliseconds(since: started) / 1000,
+                        Self.shortReason(error)
+                    )
+                )
+                AppLogger.llm.warning(
+                    "\(name, privacy: .public) unavailable; trying next — \(error.localizedDescription, privacy: .public)"
+                )
             }
         }
 
         do {
-            return (try await ollama.format(text: text), .ollama, notes)
+            return (
+                try await ollama.format(
+                    text: text,
+                    systemPrompt: systemPrompt,
+                    userMessage: userMessage
+                ),
+                .ollama,
+                notes
+            )
         } catch {
             if !notes.isEmpty {
                 notes.append("Ollama also failed (\(Self.shortReason(error)))")
             }
             throw error
+        }
+    }
+
+    private static func format(
+        with client: any TextFormatter,
+        text: String,
+        systemPrompt: String,
+        userMessage: String
+    ) async throws -> String {
+        switch client {
+        case let groq as GroqClient:
+            return try await groq.format(text: text, systemPrompt: systemPrompt, userMessage: userMessage)
+        case let openAI as OpenAIClient:
+            return try await openAI.format(text: text, systemPrompt: systemPrompt, userMessage: userMessage)
+        case let gemini as GeminiClient:
+            return try await gemini.format(text: text, systemPrompt: systemPrompt, userMessage: userMessage)
+        default:
+            return try await client.format(text: text)
         }
     }
 

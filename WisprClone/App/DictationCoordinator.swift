@@ -20,10 +20,18 @@ final class DictationCoordinator {
     private var recordingStopContinuation: CheckedContinuation<Void, Never>?
     private var recordingStopRequested = false
     private var speechStartedAt: ContinuousClock.Instant?
+    /// When the current dictation session UI started (for ignoring bogus immediate stops).
+    private var sessionBeganAt: ContinuousClock.Instant?
     /// App that had focus when dictation started — paste must land there, not in WisprClone.
     private var pasteTargetApp: NSRunningApplication?
+    /// Prefetched at session start (local only): Gmail-in-Chrome, session key, profile.
+    private var writingContext: FrontmostWritingContext?
+    /// Prefetched vocabulary hint for this session (tiny; no prior prose to LLM).
+    private var prefetchedVocabularyHint: String?
     /// Progressive Whisper while listening (WhisperKit path only).
     private var liveTranscriber: LiveChunkTranscriber?
+    /// Preferred Deepgram path — continuous WebSocket (falls back to HTTP chunks).
+    private var liveStreamer: DeepgramLiveStreamer?
     /// Formats each live ASR chunk as it arrives (overlaps LLM with speech).
     private var progressiveFormatter: ProgressiveLLMFormatter?
 
@@ -80,6 +88,27 @@ final class DictationCoordinator {
         return recognizer
     }
 
+    private func fullFileRecognizer(for config: Configuration) throws -> any SpeechRecognizing {
+        let bias = PersonalDictionaryStore.shared
+            .allTerms(includingConfiguredBias: config.whisperVocabularyBias)
+            .joined(separator: ", ")
+        switch config.speechEngine {
+        case .deepgram:
+            guard let key = configurationStore.resolvedDeepgramKey(), !key.isEmpty else {
+                throw AppError.notConfigured("Deepgram API Key Missing — add DEEPGRAM_API_KEY to .env")
+            }
+            return DeepgramRecognizer(
+                apiKey: key,
+                model: DeepgramRequestSupport.sanitizedModel(config.deepgramModel),
+                vocabularyBias: bias
+            )
+        case .whisperKit:
+            return whisperRecognizer(for: config.whisperModel)
+        case .appleSpeech:
+            return AppleSpeechRecognizer()
+        }
+    }
+
     /// Menu-bar “Start Dictation” entry point (works even when hotkeys are blocked).
     func triggerFromMenu() {
         handleHotkey(.toggle)
@@ -120,6 +149,12 @@ final class DictationCoordinator {
             beginSession()
         case (.stop, .listening), (.stop, .detectingSpeech),
              (.toggle, .listening), (.toggle, .detectingSpeech):
+            // Ignore a stop that races in immediately after double-fn begin.
+            if let sessionBeganAt,
+               AppLogger.elapsedMilliseconds(since: sessionBeganAt) < 650 {
+                DiagnosticLog.write("hotkey stop ignored (too soon after begin)")
+                return
+            }
             requestRecordingStop()
         // Escape hatch when an LLM call hangs on "Refining".
         case (.stop, .formatting), (.stop, .transcribing), (.stop, .injecting),
@@ -139,11 +174,17 @@ final class DictationCoordinator {
     private func beginSession() {
         cancelActiveSession(resetState: false)
         recordingStopRequested = false
+        sessionBeganAt = .now
         // Remember the user's focused app *before* we do anything that might
         // touch activation — ⌘V must land there, not in Preferences/overlay.
         pasteTargetApp = Self.frontmostAppExcludingSelf()
+        // Local-only prefetch (no API tokens): window title → Gmail/Slack/etc + slim vocabulary.
+        let resolved = FrontmostWritingContextResolver.resolve(for: pasteTargetApp)
+        writingContext = resolved
+        let summary = ContextSessionStore.shared.prefetch(sessionKey: resolved.sessionKey)
+        prefetchedVocabularyHint = summary.llmVocabularyHint
         DiagnosticLog.write(
-            "paste target=\(pasteTargetApp?.localizedName ?? "none") pid=\(pasteTargetApp?.processIdentifier ?? -1)"
+            "paste target=\(pasteTargetApp?.localizedName ?? "none") pid=\(pasteTargetApp?.processIdentifier ?? -1) site=\(resolved.profile.id) session=\(resolved.sessionKey) title=\(resolved.windowTitle ?? "-")"
         )
 
         // Bounce idle → listening so observers always fire even if we were
@@ -213,7 +254,7 @@ final class DictationCoordinator {
         let ok = target.activate(options: [.activateIgnoringOtherApps])
         DiagnosticLog.write("restored focus → \(target.localizedName ?? "?") ok=\(ok)")
         // Brief settle so the caret is live before we synthesize ⌘V.
-        try? await Task.sleep(nanoseconds: 80_000_000)
+        try? await Task.sleep(nanoseconds: Constants.Injection.focusSettleNanoseconds)
     }
 
     private func cancelActiveSession(resetState: Bool) {
@@ -222,8 +263,13 @@ final class DictationCoordinator {
         requestRecordingStop()
         _ = recorder.stop()
         vad = nil
+        liveStreamer?.cancel()
+        liveStreamer = nil
         liveTranscriber = nil
         progressiveFormatter = nil
+        writingContext = nil
+        prefetchedVocabularyHint = nil
+        sessionBeganAt = nil
         overlayPresentation.resetAudioLevel()
         speechStartedAt = nil
         if resetState {
@@ -256,13 +302,37 @@ final class DictationCoordinator {
         if recordingState.state != .listening && recordingState.state != .detectingSpeech {
             recordingState.update(.listening)
         }
-        speechStartedAt = ContinuousClock.now
 
         let config = configurationStore.configuration
-        let useLiveWhisper = config.speechEngine == .whisperKit
-        let whisper = useLiveWhisper ? whisperRecognizer(for: config.whisperModel) : nil
-        let live = whisper.map { LiveChunkTranscriber(recognizer: $0) }
-        liveTranscriber = live
+        let biasTerms = PersonalDictionaryStore.shared.allTerms(
+            includingConfiguredBias: config.whisperVocabularyBias
+        )
+        let bias = biasTerms.joined(separator: ", ")
+
+        liveStreamer = nil
+        liveTranscriber = nil
+
+        // Deepgram: create streamer immediately; connect in the background AFTER
+        // the mic starts so the user can speak during the TLS handshake.
+        // WhisperKit: HTTP/local chunk path. Apple Speech: full-file only.
+        switch config.speechEngine {
+        case .deepgram:
+            guard let key = configurationStore.resolvedDeepgramKey(), !key.isEmpty else {
+                throw AppError.notConfigured("Deepgram API Key Missing — add DEEPGRAM_API_KEY to .env")
+            }
+            let streamer = DeepgramLiveStreamer(
+                apiKey: key,
+                model: DeepgramRequestSupport.sanitizedModel(config.deepgramModel),
+                vocabularyBias: bias
+            )
+            liveStreamer = streamer
+        case .whisperKit:
+            liveTranscriber = LiveChunkTranscriber(
+                recognizer: whisperRecognizer(for: config.whisperModel)
+            )
+        case .appleSpeech:
+            break
+        }
 
         // Start LLM work on each ASR chunk while the user is still speaking.
         // Full-transcript formatting remains the fallback if this doesn't cover.
@@ -270,15 +340,35 @@ final class DictationCoordinator {
             config: config,
             utteranceDurationSeconds: 0
         )
-        let progressive = ProgressiveLLMFormatter(formatter: earlyFormatter)
+        let progressiveBase = FormattingRequest(
+            text: "",
+            utteranceDurationSeconds: 0,
+            asrConfidence: nil,
+            targetBundleID: writingContext?.bundleID ?? pasteTargetApp?.bundleIdentifier,
+            targetAppName: writingContext?.displayLabel ?? pasteTargetApp?.localizedName,
+            targetWindowTitle: writingContext?.windowTitle,
+            siteHint: writingContext.map {
+                FrontmostWritingContextResolver.detectSite(
+                    windowTitle: $0.windowTitle,
+                    bundleID: $0.bundleID,
+                    appName: $0.appName
+                )
+            } ?? nil,
+            sessionSummary: prefetchedVocabularyHint,
+            personalTerms: Array(biasTerms.prefix(12))
+        )
+        let progressive = ProgressiveLLMFormatter(formatter: earlyFormatter, baseRequest: progressiveBase)
         progressiveFormatter = progressive
-        live?.onUsableChunk = { [weak progressive] index, text in
+        let onChunk: @Sendable (Int, String) -> Void = { [weak progressive] index, text in
             progressive?.ingest(index: index, text: text)
         }
+        liveStreamer?.onUsableChunk = onChunk
+        liveTranscriber?.onUsableChunk = onChunk
 
         let detector = VoiceActivityDetector(
             onLevel: { [weak overlayPresentation] rms in
-                Task { @MainActor in
+                // Prefer DispatchQueue over Task — lower latency for waveform updates.
+                DispatchQueue.main.async {
                     overlayPresentation?.updateAudioLevel(rms: rms)
                 }
             },
@@ -293,20 +383,48 @@ final class DictationCoordinator {
 
         try Task.checkCancellation()
 
+        // Start mic FIRST — leading speech must not wait on Deepgram connect.
+        speechStartedAt = ContinuousClock.now
         let url: URL
         do {
-            url = try recorder.start { [weak detector, live] buffer, _ in
+            let streamer = liveStreamer
+            let live = liveTranscriber
+            url = try recorder.start { [weak detector, streamer, live] buffer, _ in
                 detector?.process(buffer: buffer)
-                live?.ingest(buffer)
+                if let streamer {
+                    streamer.ingest(buffer)
+                } else {
+                    live?.ingest(buffer)
+                }
             }
-            DiagnosticLog.write("recorder started liveASR=\(useLiveWhisper)")
+            DiagnosticLog.write(
+                "recorder started liveASR=\(streamer != nil || live != nil) stream=\(streamer != nil) engine=\(config.speechEngine.rawValue)"
+            )
         } catch {
             DiagnosticLog.write("recorder start failed: \(error.localizedDescription)")
             throw AppError.microphoneUnavailable
         }
 
+        // Connect WebSocket while the mic is already capturing (audio buffers until ready).
+        if let streamer = liveStreamer {
+            streamer.beginConnect()
+            DiagnosticLog.write("live ASR mode=websocket (connecting in background)")
+        }
+
         await waitForManualStopOrTimeout(seconds: Constants.Audio.maxListenSeconds)
         try Task.checkCancellation()
+
+        // Keep capturing briefly so the last spoken words aren't cut off when
+        // the user hits stop mid-phrase. Streaming needs less — Finalize flushes.
+        let postRoll = liveStreamer != nil
+            ? Constants.Audio.postRollStreamingNanoseconds
+            : Constants.Audio.postRollNanoseconds
+        try? await Task.sleep(nanoseconds: postRoll)
+        if let streamer = liveStreamer {
+            await streamer.flushEarly()
+        } else if let live = liveTranscriber {
+            await live.flushEarly()
+        }
 
         if let speechStartedAt {
             let listenMS = AppLogger.elapsedMilliseconds(since: speechStartedAt)
@@ -320,6 +438,8 @@ final class DictationCoordinator {
 
         defer {
             try? FileManager.default.removeItem(at: fileURL)
+            liveStreamer?.cancel()
+            liveStreamer = nil
             liveTranscriber = nil
             progressiveFormatter = nil
         }
@@ -328,31 +448,94 @@ final class DictationCoordinator {
         var timing = TranscriptHistoryStore.TimingBreakdown()
         var delayNotes: [String] = []
 
-        // Transcribe — prefer live chunks already processed while speaking.
+        // Transcribe — prefer live stream / chunks already processed while speaking.
         recordingState.update(.transcribing)
         let transcriptionLabel = Self.transcriptionModelLabel(for: config)
         let transcriptionStart = ContinuousClock.now
 
         let transcript: String
-        if let live {
-            let liveResult = await live.finish()
-            if Self.hasMeaningfulSpeech(liveResult.text) {
-                transcript = liveResult.text
-                delayNotes.append("Live ASR · \(liveResult.chunkCount) chunk(s) while speaking")
-                DiagnosticLog.write("live transcript chunks=\(liveResult.chunkCount) chars=\(transcript.count)")
+        var asrConfidence: Double?
+        if liveStreamer != nil || liveTranscriber != nil {
+            let liveResult: (text: String, chunkCount: Int, confidence: Double?, timedOut: Bool)
+            let pathLabel: String
+            if let streamer = liveStreamer {
+                liveResult = await streamer.finish()
+                pathLabel = "Live stream"
+            } else if let live = liveTranscriber {
+                liveResult = await live.finish()
+                pathLabel = "Live ASR"
             } else {
-                // Fallback: full-file Whisper with internal VAD chunking.
-                DiagnosticLog.write("live ASR empty — falling back to full file")
-                delayNotes.append("Live ASR empty; fell back to full-file Whisper")
-                transcript = try await AppLogger.measure("transcription", logger: AppLogger.speech) {
-                    try await whisperRecognizer(for: config.whisperModel).transcribe(audioURL: fileURL)
+                liveResult = ("", 0, nil, true)
+                pathLabel = "Live ASR"
+            }
+
+            let liveUsable = Self.hasMeaningfulSpeech(liveResult.text)
+            // Incomplete live join → re-transcribe so the final sentence isn't dropped.
+            if liveResult.timedOut || !liveUsable {
+                let retained = liveStreamer?.retainedSamples16k()
+                DiagnosticLog.write(
+                    "\(pathLabel) incomplete timedOut=\(liveResult.timedOut) chars=\(liveResult.text.count) — fallback (\(config.speechEngine.rawValue), \(retained != nil ? "16k pcm" : "wav"))"
+                )
+                delayNotes.append(
+                    liveUsable
+                        ? "\(pathLabel) incomplete; re-checked with \(config.speechEngine.rawValue) for trailing speech"
+                        : "\(pathLabel) empty; fell back to \(config.speechEngine.rawValue) upload"
+                )
+                let recognizer = try fullFileRecognizer(for: config)
+                let fallback: @Sendable () async throws -> SpeechTranscription = {
+                    if let retained, let deepgram = recognizer as? DeepgramRecognizer {
+                        return try await deepgram.transcribe(samples: retained, promptContext: nil)
+                    }
+                    return try await recognizer.transcribe(audioURL: fileURL)
                 }
+
+                var result: SpeechTranscription?
+                if liveUsable {
+                    // Already have text — a slow re-check must not hold the paste hostage.
+                    do {
+                        result = try await Self.withDeadline(
+                            Constants.Speech.fallbackMaxWaitWithLiveTextSeconds,
+                            fallback
+                        )
+                        if result == nil {
+                            DiagnosticLog.write("fallback exceeded deadline — using live text")
+                        }
+                    } catch {
+                        DiagnosticLog.write("fallback failed (\(error.localizedDescription)) — using live text")
+                    }
+                } else {
+                    result = try await AppLogger.measure("transcription", logger: AppLogger.speech) {
+                        try await fallback()
+                    }
+                }
+
+                if let result, Self.hasMeaningfulSpeech(result.text),
+                   !liveUsable || result.text.count >= liveResult.text.count {
+                    transcript = result.text
+                    asrConfidence = result.confidence
+                } else if liveUsable {
+                    transcript = liveResult.text
+                    asrConfidence = liveResult.confidence
+                    delayNotes.append("\(pathLabel) · \(liveResult.chunkCount) segment(s)")
+                } else {
+                    transcript = result?.text ?? ""
+                    asrConfidence = result?.confidence
+                }
+            } else {
+                transcript = liveResult.text
+                asrConfidence = liveResult.confidence
+                delayNotes.append("\(pathLabel) · \(liveResult.chunkCount) segment(s)")
+                DiagnosticLog.write(
+                    "\(pathLabel.lowercased()) transcript segments=\(liveResult.chunkCount) chars=\(transcript.count)"
+                )
             }
         } else {
             let recognizer = AppleSpeechRecognizer()
-            transcript = try await AppLogger.measure("transcription", logger: AppLogger.speech) {
+            let result = try await AppLogger.measure("transcription", logger: AppLogger.speech) {
                 try await recognizer.transcribe(audioURL: fileURL)
             }
+            transcript = result.text
+            asrConfidence = result.confidence
         }
         timing.transcriptionSeconds = AppLogger.elapsedMilliseconds(since: transcriptionStart) / 1000
 
@@ -365,12 +548,33 @@ final class DictationCoordinator {
             return
         }
 
+        let targetBundle = writingContext?.bundleID ?? pasteTargetApp?.bundleIdentifier
+        let targetName = writingContext?.displayLabel ?? pasteTargetApp?.localizedName
+        let sessionKey = writingContext?.sessionKey ?? (targetBundle ?? "unknown")
+        let vocabularyHint = prefetchedVocabularyHint
+            ?? ContextSessionStore.shared.summary(forSessionKey: sessionKey).llmVocabularyHint
+        let personalTerms = Array(
+            PersonalDictionaryStore.shared
+                .allTerms(includingConfiguredBias: config.whisperVocabularyBias)
+                .prefix(12)
+        )
+
         // Format — prefer progressive LLM that already ran on live ASR chunks.
         recordingState.update(.formatting)
         let listenSeconds = speechStartedAt.map { AppLogger.elapsedMilliseconds(since: $0) / 1000 } ?? 0
         let formattingStart = ContinuousClock.now
 
-        let formatResult: FormatResult
+        let siteHint = writingContext.map {
+            FrontmostWritingContextResolver.detectSite(
+                windowTitle: $0.windowTitle,
+                bundleID: $0.bundleID,
+                appName: $0.appName
+            )
+        } ?? nil
+
+        var formatResult: FormatResult?
+        // Prefer progressive only when it covers essentially the full ASR text.
+        // A looser threshold previously pasted truncated speech (last sentence cut).
         if let progressive = progressiveFormatter, progressive.didStart,
            let progressiveResult = await progressive.finish(),
            Self.hasMeaningfulSpeech(progressiveResult.text),
@@ -388,14 +592,42 @@ final class DictationCoordinator {
                 config: config,
                 utteranceDurationSeconds: listenSeconds
             )
+            let request = FormattingRequest(
+                text: cleanedTranscript,
+                utteranceDurationSeconds: listenSeconds,
+                asrConfidence: asrConfidence,
+                targetBundleID: targetBundle,
+                targetAppName: targetName,
+                targetWindowTitle: writingContext?.windowTitle,
+                siteHint: siteHint,
+                sessionSummary: vocabularyHint,
+                personalTerms: personalTerms
+            )
             formatResult = try await AppLogger.measure("llm.format", logger: AppLogger.llm) {
-                try await formatter.formatDetailed(text: cleanedTranscript)
+                try await formatter.formatDetailed(request)
             }
-            delayNotes.append(contentsOf: formatResult.notes)
+            if let notes = formatResult?.notes {
+                delayNotes.append(contentsOf: notes)
+            }
+        }
+
+        guard let formatResult else {
+            throw AppError.llmFailed("Formatting produced no result")
         }
         timing.formattingSeconds = AppLogger.elapsedMilliseconds(since: formattingStart) / 1000
 
         let formatted = formatResult.text
+        DiagnosticLog.write(
+            "format done intent=\(formatResult.intent.rawValue) level=\(formatResult.level.rawValue) newlines=\(formatted.filter { $0 == "\n" }.count) chars=\(formatted.count)"
+        )
+
+        ContextSessionStore.shared.record(
+            sessionKey: sessionKey,
+            intent: formatResult.intent,
+            transcript: cleanedTranscript,
+            formatted: formatted
+        )
+        PersonalDictionaryStore.shared.learn(from: formatted)
 
         // Save before injecting so text is recoverable if paste fails.
         historyStore.record(
@@ -445,6 +677,22 @@ final class DictationCoordinator {
         AppLogger.pipeline.info("Dictation session completed in \(totalMS, format: .fixed(precision: 1)) ms")
     }
 
+    /// Runs `operation`, returning nil if it hasn't finished within `seconds`.
+    private nonisolated static func withDeadline<T: Sendable>(
+        _ seconds: TimeInterval,
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T? {
+        try await withThrowingTaskGroup(of: T?.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? nil
+        }
+    }
+
     /// True when ASR/LLM text has real content — not blank, punctuation-only,
     /// or common silence hallucinations ("no text", "thank you", etc.).
     private static func hasMeaningfulSpeech(_ text: String) -> Bool {
@@ -463,15 +711,18 @@ final class DictationCoordinator {
         return true
     }
 
-    /// Progressive chunk join can drift from full live join; require enough coverage.
+    /// Progressive / speculative reuse must be nearly complete — otherwise the
+    /// last sentence is silently dropped.
     private static func progressiveCoversTranscript(progressive: String, full: String) -> Bool {
         let p = progressive.trimmingCharacters(in: .whitespacesAndNewlines).count
         let f = full.trimmingCharacters(in: .whitespacesAndNewlines).count
         guard f > 0 else { return false }
         let ratio = Double(p) / Double(f)
-        if ratio < Constants.Formatting.progressiveMinCoverage {
+        let missing = f - p
+        // Require ~full coverage and at most a tiny absolute gap (≈ a short word).
+        if ratio < Constants.Formatting.progressiveMinCoverage || missing > 16 {
             DiagnosticLog.write(
-                String(format: "progressive coverage low %.0f%% (%d/%d); single-shot fallback", ratio * 100, p, f)
+                String(format: "progressive coverage low %.0f%% (%d/%d missing=%d); single-shot fallback", ratio * 100, p, f, missing)
             )
             return false
         }
@@ -538,10 +789,10 @@ final class DictationCoordinator {
                 recordingState.update(.detectingSpeech)
             }
         case .silenceTimedOut:
-            // Commit a live ASR chunk at the phrase boundary, then re-arm VAD
-            // so the next phrase can commit again. Recording still ends only
-            // when the user presses stop.
+            // HTTP-chunk path: commit at phrase boundary. Streaming path: Deepgram
+            // endpointing handles this; commit is a no-op.
             liveTranscriber?.commitOnSilence()
+            liveStreamer?.commitOnSilence()
             vad?.reset()
         }
     }
@@ -564,9 +815,8 @@ final class DictationCoordinator {
     }
 
     private func requestRecordingStop() {
-        // Kick Whisper on buffered audio before recorder teardown so short
-        // utterances don't sit idle for hundreds of ms before decode starts.
-        liveTranscriber?.flushEarly()
+        // Don't flush here — runSession applies a short post-roll so the last
+        // words still reach the live buffer, then flushes and stops the mic.
         recordingStopRequested = true
         recordingStopContinuation?.resume()
         recordingStopContinuation = nil
@@ -587,7 +837,14 @@ final class DictationCoordinator {
             ),
             gemini: geminiKey.isEmpty
                 ? nil
-                : GeminiClient(apiKey: geminiKey, model: config.geminiModel, temperature: config.temperature),
+                : GeminiClient(
+                    apiKey: geminiKey,
+                    model: config.geminiModel,
+                    temperature: config.temperature,
+                    fallbackModel: config.geminiModel == Constants.LLM.fallbackGeminiModel
+                        ? Constants.LLM.defaultGeminiModel
+                        : Constants.LLM.fallbackGeminiModel
+                ),
             groq: groqKey.isEmpty
                 ? nil
                 : GroqClient(apiKey: groqKey, model: config.groqModel, temperature: config.temperature),
@@ -603,6 +860,8 @@ final class DictationCoordinator {
 
     private static func transcriptionModelLabel(for config: Configuration) -> String {
         switch config.speechEngine {
+        case .deepgram:
+            return "Deepgram · \(config.deepgramModel)"
         case .whisperKit:
             return "WhisperKit · \(config.whisperModel)"
         case .appleSpeech:

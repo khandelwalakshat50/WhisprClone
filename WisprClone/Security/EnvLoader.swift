@@ -3,7 +3,7 @@ import Synchronization
 
 /// Loads API keys from a `.env` file and the process environment.
 ///
-/// Supported keys: `GEMINI_API_KEY` (alias `GOOGLE_API_KEY`), `OPENAI_API_KEY`, `GROQ_API_KEY`.
+/// Supported keys: `DEEPGRAM_API_KEY`, `GEMINI_API_KEY` (alias `GOOGLE_API_KEY`), `OPENAI_API_KEY`, `GROQ_API_KEY`.
 ///
 /// Search order:
 /// 1. Process environment
@@ -13,12 +13,14 @@ import Synchronization
 /// 5. `~/Library/Application Support/WisprClone/.env`
 enum EnvLoader {
     struct Values: Equatable, Sendable {
+        var deepgramAPIKey: String?
         var geminiAPIKey: String?
         var openAIAPIKey: String?
         var groqAPIKey: String?
 
         var hasAnyKey: Bool {
-            !(geminiAPIKey ?? "").isEmpty
+            !(deepgramAPIKey ?? "").isEmpty
+                || !(geminiAPIKey ?? "").isEmpty
                 || !(openAIAPIKey ?? "").isEmpty
                 || !(groqAPIKey ?? "").isEmpty
         }
@@ -45,6 +47,9 @@ enum EnvLoader {
         var values = Values()
 
         // Process environment wins for CI / launchd wrappers.
+        if let deepgram = ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"], !deepgram.isEmpty {
+            values.deepgramAPIKey = deepgram
+        }
         if let gemini = ProcessInfo.processInfo.environment["GEMINI_API_KEY"], !gemini.isEmpty {
             values.geminiAPIKey = gemini
         } else if let google = ProcessInfo.processInfo.environment["GOOGLE_API_KEY"], !google.isEmpty {
@@ -60,6 +65,9 @@ enum EnvLoader {
         for url in candidateFileURLs() {
             guard let fileValues = parseFile(at: url) else { continue }
             AppLogger.env.info("Loaded .env from \(url.path, privacy: .public)")
+            if values.deepgramAPIKey == nil, let key = fileValues.deepgramAPIKey, !key.isEmpty {
+                values.deepgramAPIKey = key
+            }
             if values.geminiAPIKey == nil, let key = fileValues.geminiAPIKey, !key.isEmpty {
                 values.geminiAPIKey = key
             }
@@ -139,6 +147,8 @@ enum EnvLoader {
                 value = String(value.dropFirst().dropLast())
             }
             switch key {
+            case "DEEPGRAM_API_KEY":
+                values.deepgramAPIKey = value
             case "GEMINI_API_KEY", "GOOGLE_API_KEY":
                 if values.geminiAPIKey == nil || values.geminiAPIKey?.isEmpty == true {
                     values.geminiAPIKey = value
@@ -166,20 +176,22 @@ enum EnvLoader {
             // Merge into any existing Application Support .env so adding one
             // new key (e.g. Gemini) never wipes OpenAI/Groq already mirrored.
             var merged = parseFile(at: dest) ?? Values()
+            if let deepgram = values.deepgramAPIKey, !deepgram.isEmpty { merged.deepgramAPIKey = deepgram }
             if let gemini = values.geminiAPIKey, !gemini.isEmpty { merged.geminiAPIKey = gemini }
             if let openAI = values.openAIAPIKey, !openAI.isEmpty { merged.openAIAPIKey = openAI }
             if let groq = values.groqAPIKey, !groq.isEmpty { merged.groqAPIKey = groq }
 
             var lines: [String] = []
+            if let deepgram = merged.deepgramAPIKey, !deepgram.isEmpty { lines.append("DEEPGRAM_API_KEY=\(deepgram)") }
             if let gemini = merged.geminiAPIKey, !gemini.isEmpty { lines.append("GEMINI_API_KEY=\(gemini)") }
             if let openAI = merged.openAIAPIKey, !openAI.isEmpty { lines.append("OPENAI_API_KEY=\(openAI)") }
             if let groq = merged.groqAPIKey, !groq.isEmpty { lines.append("GROQ_API_KEY=\(groq)") }
             try lines.joined(separator: "\n").write(to: dest, atomically: true, encoding: .utf8)
             AppLogger.env.info(
-                "Mirrored .env → Application Support (gemini=\(!(merged.geminiAPIKey ?? "").isEmpty), openai=\(!(merged.openAIAPIKey ?? "").isEmpty), groq=\(!(merged.groqAPIKey ?? "").isEmpty))"
+                "Mirrored .env → Application Support (deepgram=\(!(merged.deepgramAPIKey ?? "").isEmpty), gemini=\(!(merged.geminiAPIKey ?? "").isEmpty), openai=\(!(merged.openAIAPIKey ?? "").isEmpty), groq=\(!(merged.groqAPIKey ?? "").isEmpty))"
             )
             DiagnosticLog.write(
-                "env keys gemini=\(!(merged.geminiAPIKey ?? "").isEmpty) openai=\(!(merged.openAIAPIKey ?? "").isEmpty) groq=\(!(merged.groqAPIKey ?? "").isEmpty)"
+                "env keys deepgram=\(!(merged.deepgramAPIKey ?? "").isEmpty) gemini=\(!(merged.geminiAPIKey ?? "").isEmpty) openai=\(!(merged.openAIAPIKey ?? "").isEmpty) groq=\(!(merged.groqAPIKey ?? "").isEmpty)"
             )
         } catch {
             AppLogger.env.error("Failed to mirror .env: \(error.localizedDescription, privacy: .public)")

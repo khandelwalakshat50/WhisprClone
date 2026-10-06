@@ -11,7 +11,7 @@ struct OpenAIClient: TextFormatter {
 
     init(
         apiKey: String,
-        model: String = "gpt-4o-mini",
+        model: String = Constants.LLM.defaultOpenAIModel,
         temperature: Double = 0.2,
         timeout: TimeInterval = Constants.LLM.chatTimeoutSeconds
     ) {
@@ -22,6 +22,18 @@ struct OpenAIClient: TextFormatter {
     }
 
     func format(text: String) async throws -> String {
+        try await format(
+            text: text,
+            systemPrompt: LLMPrompt.system,
+            userMessage: LLMPrompt.userMessage(for: text)
+        )
+    }
+
+    func format(
+        text: String,
+        systemPrompt: String,
+        userMessage: String
+    ) async throws -> String {
         try await OpenAICompatibleChat.complete(
             endpoint: endpoint,
             apiKey: apiKey,
@@ -29,7 +41,15 @@ struct OpenAIClient: TextFormatter {
             temperature: temperature,
             timeout: timeout,
             userText: text,
-            providerName: "OpenAI"
+            providerName: "OpenAI",
+            systemPrompt: systemPrompt,
+            userMessage: userMessage,
+            usesReasoningParameters: Self.isReasoningFamily(model)
         )
+    }
+
+    private static func isReasoningFamily(_ model: String) -> Bool {
+        let id = model.lowercased()
+        return id.hasPrefix("gpt-5") || id.hasPrefix("o1") || id.hasPrefix("o3") || id.hasPrefix("o4")
     }
 }

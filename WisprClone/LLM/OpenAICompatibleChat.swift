@@ -19,7 +19,11 @@ enum OpenAICompatibleChat {
         temperature: Double,
         timeout: TimeInterval,
         userText: String,
-        providerName: String
+        providerName: String,
+        systemPrompt: String = LLMPrompt.system,
+        userMessage: String? = nil,
+        usesReasoningParameters: Bool = false,
+        extraFields: [String: any Sendable] = [:]
     ) async throws -> String {
         guard !apiKey.isEmpty else {
             throw AppError.notConfigured("\(providerName) API Key Missing")
@@ -29,17 +33,27 @@ enum OpenAICompatibleChat {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("WisprClone/1.0", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = timeout
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": model,
             "temperature": temperature,
-            "max_tokens": Constants.LLM.chatMaxOutputTokens,
             "messages": [
-                ["role": "system", "content": LLMPrompt.system],
-                ["role": "user", "content": LLMPrompt.userMessage(for: userText)]
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userMessage ?? LLMPrompt.userMessage(for: userText)]
             ]
         ]
+        // GPT-5 / o-series reject `max_tokens`; reasoning "none" avoids thinking latency.
+        if usesReasoningParameters {
+            body["max_completion_tokens"] = Constants.LLM.chatMaxOutputTokens
+            body["reasoning_effort"] = "none"
+        } else {
+            body["max_tokens"] = Constants.LLM.chatMaxOutputTokens
+        }
+        for (key, value) in extraFields {
+            body[key] = value
+        }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         return try await AppLogger.measure("\(providerName).chat", logger: AppLogger.llm) {
@@ -57,7 +71,10 @@ enum OpenAICompatibleChat {
                 throw AppError.llmFailed("Invalid response")
             }
             guard (200..<300).contains(http.statusCode) else {
-                throw AppError.llmFailed("\(providerName) HTTP \(http.statusCode)")
+                let detail = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .prefix(140) ?? ""
+                throw AppError.llmFailed("\(providerName) HTTP \(http.statusCode)\(detail.isEmpty ? "" : ": \(detail)")")
             }
 
             guard

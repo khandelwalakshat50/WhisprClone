@@ -6,7 +6,7 @@ import os
 struct AppleSpeechRecognizer: SpeechRecognizing {
     private let logger = Logger(subsystem: Constants.bundleIdentifier, category: "AppleSpeech")
 
-    func transcribe(audioURL: URL) async throws -> String {
+    func transcribe(audioURL: URL) async throws -> SpeechTranscription {
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
             throw AppError.transcriptionFailed("Speech recognizer unavailable")
         }
@@ -25,7 +25,7 @@ struct AppleSpeechRecognizer: SpeechRecognizing {
         return try await withCheckedThrowingContinuation { continuation in
             let lock = NSLock()
             var hasResumed = false
-            func resumeOnce(_ result: Result<String, Error>) {
+            func resumeOnce(_ result: Result<SpeechTranscription, Error>) {
                 lock.lock()
                 defer { lock.unlock() }
                 guard !hasResumed else { return }
@@ -41,7 +41,7 @@ struct AppleSpeechRecognizer: SpeechRecognizing {
                 guard let result, result.isFinal else { return }
                 let text = result.bestTranscription.formattedString
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                resumeOnce(.success(text))
+                resumeOnce(.success(SpeechTranscription(text: text)))
             }
         }
     }

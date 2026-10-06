@@ -1,24 +1,26 @@
 import Foundation
 
-/// Formats live ASR chunk texts as soon as Whisper returns them, so most
-/// “Refining” work overlaps with speaking / remaining transcription.
+/// Formats live ASR while the user is still speaking — **Groq short-form only**.
 ///
-/// Each ~4–5s live chunk is formatted on the fast Groq path (short system
-/// prompt + instant model). For a 30s utterance that means ~6 small calls
-/// that finish *during* speech — stop-to-paste waits mostly for the last one.
+/// Auto mode restricts Groq to ≈4–5s (one live chunk). As soon as a second
+/// chunk arrives, progressive work is abandoned so the final pass can use
+/// the long-form route (OpenAI, then Gemini).
 final class ProgressiveLLMFormatter: @unchecked Sendable {
     private let formatter: LLMFormattingService
+    private let baseRequest: FormattingRequest
     private let lock = NSLock()
     private var tasks: [Int: Task<FormatResult?, Never>] = [:]
     private var started = 0
+    private var abandoned = false
 
-    /// Chunk-local routing always prefers Groq in Auto mode (each live chunk
-    /// is short-form), which is the main latency win for long dictation.
-    init(formatter: LLMFormattingService) {
+    /// Chunk-local routing prefers Groq (short-form) for the single allowed chunk.
+    init(formatter: LLMFormattingService, baseRequest: FormattingRequest = FormattingRequest(text: "")) {
         var copy = formatter
-        // Force short-form routing regardless of parent utterance length.
         copy.utteranceDurationSeconds = 0
         self.formatter = copy
+        var request = baseRequest
+        request.utteranceDurationSeconds = 0
+        self.baseRequest = request
     }
 
     func ingest(index: Int, text: String) {
@@ -28,13 +30,28 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
+        if abandoned { return }
         if tasks[index] != nil { return }
+
+        if tasks.count >= Constants.Formatting.progressiveMaxChunks {
+            for task in tasks.values {
+                task.cancel()
+            }
+            tasks.removeAll()
+            abandoned = true
+            DiagnosticLog.write(
+                "progressive LLM abandoned at chunk #\(index); long-form single-shot next"
+            )
+            return
+        }
 
         started += 1
         let formatter = self.formatter
+        var request = baseRequest
+        request.text = trimmed
         let task = Task<FormatResult?, Never> {
             do {
-                let result = try await formatter.formatDetailed(text: trimmed)
+                let result = try await formatter.formatDetailed(request)
                 DiagnosticLog.write(
                     "progressive LLM chunk #\(index) provider=\(result.provider.rawValue) chars=\(result.text.count)"
                 )
@@ -49,14 +66,18 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
         tasks[index] = task
     }
 
-    /// Waits for every ingested chunk. Returns nil only if coverage is unusable
-    /// so the caller can fall back to full-transcript formatting.
+    /// Returns the single short Groq result, or nil to force a long-form single-shot.
     func finish() async -> FormatResult? {
-        let snapshot: [Int: Task<FormatResult?, Never>] = {
+        let (wasAbandoned, snapshot): (Bool, [Int: Task<FormatResult?, Never>]) = {
             lock.lock()
             defer { lock.unlock() }
-            return tasks
+            return (abandoned, tasks)
         }()
+
+        if wasAbandoned {
+            DiagnosticLog.write("progressive LLM finish skipped (multi-chunk → long-form path)")
+            return nil
+        }
 
         guard !snapshot.isEmpty else { return nil }
 
@@ -84,8 +105,10 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
         guard !text.isEmpty else { return nil }
 
         let provider = ordered.last?.1.provider ?? .groq
+        let intent = ordered.last?.1.intent ?? .plain
+        let level = ordered.last?.1.level ?? .preserve
         var notes = [
-            "Progressive LLM · \(ordered.count)/\(snapshot.count) chunk(s) overlapped with speech"
+            "Progressive LLM · \(ordered.count)/\(snapshot.count) short chunk(s) via Groq"
         ]
         for (index, result) in ordered {
             notes.append(contentsOf: result.notes.map { "chunk \(index): \($0)" })
@@ -93,13 +116,19 @@ final class ProgressiveLLMFormatter: @unchecked Sendable {
         DiagnosticLog.write(
             "progressive LLM done chunks=\(ordered.count) chars=\(text.count) provider=\(provider.rawValue)"
         )
-        return FormatResult(text: text, provider: provider, notes: notes)
+        return FormatResult(
+            text: text,
+            provider: provider,
+            notes: notes,
+            intent: intent,
+            level: level
+        )
     }
 
     var didStart: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return started > 0
+        return started > 0 && !abandoned
     }
 
     var startedCount: Int {

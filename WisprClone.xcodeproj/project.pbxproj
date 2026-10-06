@@ -20,6 +20,15 @@
 		B00000000000000000000211 /* GroqClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000111 /* GroqClient.swift */; };
 		B00000000000000000000246 /* GeminiClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000146 /* GeminiClient.swift */; };
 		B00000000000000000000247 /* ProgressiveLLMFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000147 /* ProgressiveLLMFormatter.swift */; };
+		B00000000000000000000248 /* DeepgramRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000148 /* DeepgramRecognizer.swift */; };
+		B00000000000000000000255 /* DeepgramLiveStreamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000155 /* DeepgramLiveStreamer.swift */; };
+		B00000000000000000000256 /* DeepgramRequestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000156 /* DeepgramRequestSupport.swift */; };
+		B00000000000000000000249 /* DictationIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000149 /* DictationIntelligence.swift */; };
+		B00000000000000000000250 /* LLMPromptLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000150 /* LLMPromptLibrary.swift */; };
+		B00000000000000000000251 /* ContextSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000151 /* ContextSessionStore.swift */; };
+		B00000000000000000000252 /* PersonalDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000152 /* PersonalDictionaryStore.swift */; };
+		B00000000000000000000253 /* FrontmostWritingContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000153 /* FrontmostWritingContext.swift */; };
+		B00000000000000000000254 /* StructurePostProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000154 /* StructurePostProcessor.swift */; };
 		B00000000000000000000212 /* LLMFormattingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000112 /* LLMFormattingService.swift */; };
 		B00000000000000000000213 /* OllamaClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000113 /* OllamaClient.swift */; };
 		B00000000000000000000214 /* OpenAIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000114 /* OpenAIClient.swift */; };
@@ -69,6 +78,15 @@
 		B00000000000000000000111 /* GroqClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroqClient.swift; sourceTree = "<group>"; };
 		B00000000000000000000146 /* GeminiClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiClient.swift; sourceTree = "<group>"; };
 		B00000000000000000000147 /* ProgressiveLLMFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressiveLLMFormatter.swift; sourceTree = "<group>"; };
+		B00000000000000000000148 /* DeepgramRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepgramRecognizer.swift; sourceTree = "<group>"; };
+		B00000000000000000000155 /* DeepgramLiveStreamer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepgramLiveStreamer.swift; sourceTree = "<group>"; };
+		B00000000000000000000156 /* DeepgramRequestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepgramRequestSupport.swift; sourceTree = "<group>"; };
+		B00000000000000000000149 /* DictationIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationIntelligence.swift; sourceTree = "<group>"; };
+		B00000000000000000000150 /* LLMPromptLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMPromptLibrary.swift; sourceTree = "<group>"; };
+		B00000000000000000000151 /* ContextSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextSessionStore.swift; sourceTree = "<group>"; };
+		B00000000000000000000152 /* PersonalDictionaryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersonalDictionaryStore.swift; sourceTree = "<group>"; };
+		B00000000000000000000153 /* FrontmostWritingContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontmostWritingContext.swift; sourceTree = "<group>"; };
+		B00000000000000000000154 /* StructurePostProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructurePostProcessor.swift; sourceTree = "<group>"; };
 		B00000000000000000000112 /* LLMFormattingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LLMFormattingService.swift; sourceTree = "<group>"; };
 		B00000000000000000000113 /* OllamaClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OllamaClient.swift; sourceTree = "<group>"; };
 		B00000000000000000000114 /* OpenAIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIClient.swift; sourceTree = "<group>"; };
@@ -192,6 +210,11 @@
 				B00000000000000000000146 /* GeminiClient.swift */,
 				B00000000000000000000147 /* ProgressiveLLMFormatter.swift */,
 				B00000000000000000000112 /* LLMFormattingService.swift */,
+				B00000000000000000000149 /* DictationIntelligence.swift */,
+				B00000000000000000000150 /* LLMPromptLibrary.swift */,
+				B00000000000000000000154 /* StructurePostProcessor.swift */,
+				B00000000000000000000151 /* ContextSessionStore.swift */,
+				B00000000000000000000152 /* PersonalDictionaryStore.swift */,
 				B00000000000000000000113 /* OllamaClient.swift */,
 				B00000000000000000000114 /* OpenAIClient.swift */,
 				B00000000000000000000115 /* OpenAICompatibleChat.swift */,
@@ -257,6 +280,7 @@
 				B00000000000000000000126 /* AppError.swift */,
 				B00000000000000000000127 /* AppLogger.swift */,
 				B00000000000000000000136 /* DiagnosticLog.swift */,
+				B00000000000000000000153 /* FrontmostWritingContext.swift */,
 				B00000000000000000000128 /* Configuration.swift */,
 				B00000000000000000000129 /* Constants.swift */,
 				B00000000000000000000130 /* RecordingState.swift */,
@@ -269,6 +293,9 @@
 			children = (
 				B00000000000000000000131 /* AppleSpeechRecognizer.swift */,
 				B00000000000000000000132 /* SpeechRecognizer.swift */,
+				B00000000000000000000148 /* DeepgramRecognizer.swift */,
+				B00000000000000000000155 /* DeepgramLiveStreamer.swift */,
+				B00000000000000000000156 /* DeepgramRequestSupport.swift */,
 				B00000000000000000000133 /* WhisperKitRecognizer.swift */,
 				B00000000000000000000145 /* LiveChunkTranscriber.swift */,
 			);
@@ -381,6 +408,11 @@
 				B00000000000000000000246 /* GeminiClient.swift in Sources */,
 				B00000000000000000000247 /* ProgressiveLLMFormatter.swift in Sources */,
 				B00000000000000000000212 /* LLMFormattingService.swift in Sources */,
+				B00000000000000000000249 /* DictationIntelligence.swift in Sources */,
+				B00000000000000000000250 /* LLMPromptLibrary.swift in Sources */,
+				B00000000000000000000254 /* StructurePostProcessor.swift in Sources */,
+				B00000000000000000000251 /* ContextSessionStore.swift in Sources */,
+				B00000000000000000000252 /* PersonalDictionaryStore.swift in Sources */,
 				B00000000000000000000213 /* OllamaClient.swift in Sources */,
 				B00000000000000000000214 /* OpenAIClient.swift in Sources */,
 				B00000000000000000000215 /* OpenAICompatibleChat.swift in Sources */,
@@ -406,11 +438,15 @@
 				B00000000000000000000230 /* RecordingState.swift in Sources */,
 				B00000000000000000000231 /* AppleSpeechRecognizer.swift in Sources */,
 				B00000000000000000000232 /* SpeechRecognizer.swift in Sources */,
+				B00000000000000000000248 /* DeepgramRecognizer.swift in Sources */,
+				B00000000000000000000255 /* DeepgramLiveStreamer.swift in Sources */,
+				B00000000000000000000256 /* DeepgramRequestSupport.swift in Sources */,
 				B00000000000000000000233 /* WhisperKitRecognizer.swift in Sources */,
 				B00000000000000000000245 /* LiveChunkTranscriber.swift in Sources */,
 				B00000000000000000000234 /* LLMUsageStore.swift in Sources */,
 				B00000000000000000000235 /* TranscriptHistoryStore.swift in Sources */,
 				B00000000000000000000236 /* DiagnosticLog.swift in Sources */,
+				B00000000000000000000253 /* FrontmostWritingContext.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

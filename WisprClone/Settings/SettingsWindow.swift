@@ -105,9 +105,28 @@ struct SettingsView: View {
         Form {
             Section("Speech") {
                 Picker("Engine", selection: $store.configuration.speechEngine) {
+                    Text("Deepgram Nova-3 (Cloud)").tag(SpeechEngine.deepgram)
                     Text("WhisperKit (Local)").tag(SpeechEngine.whisperKit)
                     Text("Apple Speech").tag(SpeechEngine.appleSpeech)
                 }
+                TextField(
+                    "Deepgram model",
+                    text: $store.configuration.deepgramModel,
+                    prompt: Text("nova-3")
+                )
+                .disabled(store.configuration.speechEngine != .deepgram)
+                .onChange(of: store.configuration.deepgramModel) { _, newValue in
+                    let sanitized = DeepgramRequestSupport.sanitizedModel(newValue)
+                    if sanitized != newValue {
+                        store.configuration.deepgramModel = sanitized
+                    }
+                }
+                Text("Use nova-3 (recommended). Random text here breaks transcription.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                SecureField("Deepgram API Key", text: $store.deepgramAPIKey)
+                    .onSubmit { store.saveAPIKeysFromUI() }
+                    .disabled(store.configuration.speechEngine != .deepgram)
                 TextField(
                     "Whisper model",
                     text: $store.configuration.whisperModel,
@@ -118,12 +137,12 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 TextField(
-                    "Vocabulary bias (comma-separated)",
+                    "Vocabulary / keyterms (comma-separated)",
                     text: $store.configuration.whisperVocabularyBias,
                     prompt: Text("entrepreneur, Worcestershire, OpenWhisper…")
                 )
-                .disabled(store.configuration.speechEngine != .whisperKit)
-                Text("Optional words Whisper should prefer when they sound ambiguous.")
+                .disabled(store.configuration.speechEngine == .appleSpeech)
+                Text("Optional words Deepgram (keyterm) or Whisper should prefer when they sound ambiguous.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -134,9 +153,9 @@ struct SettingsView: View {
                     Text("Gemini Only").tag(FormattingMode.geminiOnly)
                     Text("Groq Only").tag(FormattingMode.groqOnly)
                     Text("OpenAI Only").tag(FormattingMode.openAIOnly)
-                    Text("Auto Fallback (short→Groq, long→Gemini)").tag(FormattingMode.autoFallback)
+                    Text("Auto Fallback (short→Groq, long→OpenAI)").tag(FormattingMode.autoFallback)
                 }
-                Text("Auto mode: under ~90s uses Groq (progressive chunks while you speak); very long dictation prefers Gemini.")
+                Text("Auto mode: Groq for phrases up to ~12s (OpenAI backup); longer dictation tries OpenAI, then Groq. Gemini is last resort.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 TextField("Ollama model", text: $store.configuration.ollamaModel)
@@ -152,7 +171,7 @@ struct SettingsView: View {
                     .onSubmit { store.saveAPIKeysFromUI() }
 
                 if store.loadedKeysFromEnv {
-                    Text("Keys also loaded from `.env` / environment (`GEMINI_API_KEY`, etc.).")
+                    Text("Keys also loaded from `.env` / environment (`DEEPGRAM_API_KEY`, `GEMINI_API_KEY`, etc.).")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

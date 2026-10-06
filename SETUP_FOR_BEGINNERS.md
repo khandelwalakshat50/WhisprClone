@@ -175,8 +175,8 @@ You can also open **Preferences** in the app and use **Open Settings** / **Refre
 
 **Auto formatting (default):**
 
-- Typical / medium speech (under about **90 seconds**) cleans up with **Groq**, including progressive chunk formatting while you speak.  
-- Very long captures prefer **Gemini** first, then fall back if needed.
+- Very short speech (about **4–5 seconds**) cleans up with **Groq** (faster).  
+- Longer speech prefers **Gemini** (better quality), then falls back if needed.
 
 The **first** transcription can be slow while the speech model finishes preparing. Later uses are faster. Short phrases may still take a few seconds; longer speech often feels quicker because work starts while you talk.
 

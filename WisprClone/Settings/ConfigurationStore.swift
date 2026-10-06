@@ -9,6 +9,7 @@ final class ConfigurationStore: ObservableObject {
         didSet { persist(configuration) }
     }
 
+    @Published var deepgramAPIKey: String = ""
     @Published var geminiAPIKey: String = ""
     @Published var openAIAPIKey: String = ""
     @Published var groqAPIKey: String = ""
@@ -27,9 +28,11 @@ final class ConfigurationStore: ObservableObject {
         static let groqModel = "groqModel"
         static let whisperModel = "whisperModel"
         static let whisperVocabularyBias = "whisperVocabularyBias"
+        static let deepgramModel = "deepgramModel"
         static let temperature = "temperature"
         static let ollamaTimeout = "ollamaTimeout"
         static let theme = "theme"
+        static let migratedToDeepgramNova3 = "migratedSpeechEngineToDeepgramNova3"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -46,9 +49,19 @@ final class ConfigurationStore: ObservableObject {
     }
 
     func saveAPIKeysFromUI() {
+        saveKey(deepgramAPIKey, for: .deepgramAPIKey, label: "Deepgram")
         saveKey(geminiAPIKey, for: .geminiAPIKey, label: "Gemini")
         saveKey(openAIAPIKey, for: .openAIAPIKey, label: "OpenAI")
         saveKey(groqAPIKey, for: .groqAPIKey, label: "Groq")
+    }
+
+    func resolvedDeepgramKey() -> String? {
+        if let key = resolvedKey(ui: deepgramAPIKey, keychain: .deepgramAPIKey, env: EnvLoader.current.deepgramAPIKey) {
+            return key
+        }
+        // Pick up a .env edit made while the app was already running.
+        reloadEnvironment()
+        return resolvedKey(ui: deepgramAPIKey, keychain: .deepgramAPIKey, env: EnvLoader.current.deepgramAPIKey)
     }
 
     func resolvedGeminiKey() -> String? {
@@ -70,6 +83,10 @@ final class ConfigurationStore: ObservableObject {
         loadedKeysFromEnv = env.hasAnyKey
 
         // Seed Keychain once from .env when empty (so keys survive without keeping the file).
+        if let envKey = env.deepgramAPIKey, !envKey.isEmpty,
+           ((try? KeychainStore.load(.deepgramAPIKey)) ?? nil) == nil {
+            try? KeychainStore.save(envKey, for: .deepgramAPIKey)
+        }
         if let envKey = env.geminiAPIKey, !envKey.isEmpty,
            ((try? KeychainStore.load(.geminiAPIKey)) ?? nil) == nil {
             try? KeychainStore.save(envKey, for: .geminiAPIKey)
@@ -83,6 +100,9 @@ final class ConfigurationStore: ObservableObject {
             try? KeychainStore.save(envKey, for: .groqAPIKey)
         }
 
+        deepgramAPIKey = (try? KeychainStore.load(.deepgramAPIKey))
+            ?? env.deepgramAPIKey
+            ?? ""
         geminiAPIKey = (try? KeychainStore.load(.geminiAPIKey))
             ?? env.geminiAPIKey
             ?? ""
@@ -125,6 +145,10 @@ final class ConfigurationStore: ObservableObject {
         defaults.set(config.groqModel, forKey: Keys.groqModel)
         defaults.set(config.whisperModel, forKey: Keys.whisperModel)
         defaults.set(config.whisperVocabularyBias, forKey: Keys.whisperVocabularyBias)
+        defaults.set(
+            DeepgramRequestSupport.sanitizedModel(config.deepgramModel),
+            forKey: Keys.deepgramModel
+        )
         defaults.set(config.temperature, forKey: Keys.temperature)
         defaults.set(config.ollamaTimeout, forKey: Keys.ollamaTimeout)
         defaults.set(config.theme.rawValue, forKey: Keys.theme)
@@ -132,10 +156,17 @@ final class ConfigurationStore: ObservableObject {
 
     private static func load(from defaults: UserDefaults) -> Configuration {
         var config = Configuration.default
-        if let raw = defaults.string(forKey: Keys.speechEngine),
-           let engine = SpeechEngine(rawValue: raw) {
+
+        // One-time migrate production ASR from local WhisperKit → Deepgram Nova-3.
+        if !defaults.bool(forKey: Keys.migratedToDeepgramNova3) {
+            config.speechEngine = .deepgram
+            defaults.set(true, forKey: Keys.migratedToDeepgramNova3)
+            defaults.set(SpeechEngine.deepgram.rawValue, forKey: Keys.speechEngine)
+        } else if let raw = defaults.string(forKey: Keys.speechEngine),
+                  let engine = SpeechEngine(rawValue: raw) {
             config.speechEngine = engine
         }
+
         if let raw = defaults.string(forKey: Keys.formattingMode),
            let mode = FormattingMode(rawValue: raw) {
             config.formattingMode = mode
@@ -144,14 +175,23 @@ final class ConfigurationStore: ObservableObject {
             config.ollamaModel = model
         }
         if let model = defaults.string(forKey: Keys.geminiModel) {
-            config.geminiModel = model
+            // Prefer Flash-Lite as primary (3.5 often 429s first, wasting a round-trip).
+            if model == "gemini-3.5-flash" || model == "gemini-2.0-flash" {
+                config.geminiModel = Constants.LLM.defaultGeminiModel
+            } else {
+                config.geminiModel = model
+            }
         }
         if let model = defaults.string(forKey: Keys.openAIModel) {
-            config.openAIModel = model
+            if model == Constants.LLM.legacyDefaultOpenAIModel {
+                config.openAIModel = Constants.LLM.defaultOpenAIModel
+            } else {
+                config.openAIModel = model
+            }
         }
         if let model = defaults.string(forKey: Keys.groqModel) {
             // Migrate the previous stock default to the low-latency instant model.
-            if model == Constants.LLM.legacyDefaultGroqModel {
+            if Constants.LLM.retiredGroqModels.contains(model) {
                 config.groqModel = Constants.LLM.defaultGroqModel
             } else {
                 config.groqModel = model
@@ -162,6 +202,13 @@ final class ConfigurationStore: ObservableObject {
         }
         if let bias = defaults.string(forKey: Keys.whisperVocabularyBias) {
             config.whisperVocabularyBias = bias
+        }
+        if let model = defaults.string(forKey: Keys.deepgramModel) {
+            let sanitized = DeepgramRequestSupport.sanitizedModel(model)
+            config.deepgramModel = sanitized
+            if sanitized != model {
+                defaults.set(sanitized, forKey: Keys.deepgramModel)
+            }
         }
         if defaults.object(forKey: Keys.temperature) != nil {
             config.temperature = defaults.double(forKey: Keys.temperature)

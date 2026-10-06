@@ -35,12 +35,29 @@ struct GeminiClient: TextFormatter {
     }
 
     func format(text: String) async throws -> String {
+        try await format(
+            text: text,
+            systemPrompt: LLMPrompt.system,
+            userMessage: LLMPrompt.userMessage(for: text)
+        )
+    }
+
+    func format(
+        text: String,
+        systemPrompt: String,
+        userMessage: String
+    ) async throws -> String {
         guard !apiKey.isEmpty else {
             throw AppError.notConfigured("Gemini API Key Missing")
         }
 
         do {
-            return try await generate(text: text, model: model)
+            return try await generate(
+                text: text,
+                model: model,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage
+            )
         } catch let error as AppError where Self.shouldRetryWithFallback(error)
             && fallbackModel != model
             && !fallbackModel.isEmpty {
@@ -48,13 +65,23 @@ struct GeminiClient: TextFormatter {
             AppLogger.llm.warning(
                 "Gemini \(self.model, privacy: .public) unavailable; retrying \(self.fallbackModel, privacy: .public)"
             )
-            return try await generate(text: text, model: fallbackModel)
+            return try await generate(
+                text: text,
+                model: fallbackModel,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage
+            )
         }
     }
 
     // MARK: - Private
 
-    private func generate(text: String, model: String) async throws -> String {
+    private func generate(
+        text: String,
+        model: String,
+        systemPrompt: String,
+        userMessage: String
+    ) async throws -> String {
         let encodedModel = model.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? model
         guard let endpoint = URL(
             string: "https://generativelanguage.googleapis.com/v1beta/models/\(encodedModel):generateContent"
@@ -71,12 +98,12 @@ struct GeminiClient: TextFormatter {
         // Minimal thinking is the main latency win on Gemini 3.x Flash.
         let body: [String: Any] = [
             "system_instruction": [
-                "parts": [["text": LLMPrompt.system]]
+                "parts": [["text": systemPrompt]]
             ],
             "contents": [
                 [
                     "role": "user",
-                    "parts": [["text": LLMPrompt.userMessage(for: text)]]
+                    "parts": [["text": userMessage]]
                 ]
             ],
             "generationConfig": [
@@ -90,6 +117,7 @@ struct GeminiClient: TextFormatter {
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         DiagnosticLog.write("gemini request model=\(model)")
+        _ = text // retained for API symmetry / future logging
 
         return try await AppLogger.measure("Gemini.generateContent", logger: AppLogger.llm) {
             let data: Data

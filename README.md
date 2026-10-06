@@ -13,7 +13,7 @@ Local-first AI dictation for macOS 15+. Menu bar app — no Dock icon.
 - macOS 15+
 - Swift 6
 - Optional: [Ollama](https://ollama.com) for local formatting (`qwen3:8b` / `llama3.2`)
-- Optional: **Gemini**, Groq, and/or OpenAI API keys (via `.env` or Preferences)
+- Optional: **Deepgram**, **Gemini**, Groq, and/or OpenAI API keys (via `.env` or Preferences)
 
 ## API keys (`.env`)
 
@@ -24,12 +24,15 @@ cp .env.example .env
 ```
 
 ```env
+DEEPGRAM_API_KEY=your_deepgram_key
 GEMINI_API_KEY=AIza...
 OPENAI_API_KEY=sk-...
 GROQ_API_KEY=gsk_...
 ```
 
 `GOOGLE_API_KEY` is also accepted as an alias for Gemini.
+
+Default speech engine is **Deepgram Nova-3** (`DEEPGRAM_API_KEY`). WhisperKit and Apple Speech remain available in Preferences.
 
 2. On launch the app loads keys from (first match wins per key, then merges):
 
@@ -58,7 +61,7 @@ For a polished Release build in Applications, see the beginner guide / handbook 
 | Stop and transcribe | **Tap fn once** |
 | Toggle dictation | **⌘⇧Space** |
 
-Speak → manually stop → WhisperKit (live chunks + full-file fallback) → LLM format → paste into the focused app.
+Speak → manually stop → Deepgram Nova-3 (live chunks + full-file fallback) → LLM format → paste into the focused app.
 
 ## Formatting modes
 
@@ -68,7 +71,7 @@ Speak → manually stop → WhisperKit (live chunks + full-file fallback) → LL
 | **Gemini Only** | Google Gemini (`gemini-3.5-flash` by default) |
 | **Groq Only** | Groq Chat Completions |
 | **OpenAI Only** | OpenAI Chat Completions |
-| **Auto Fallback** | **Typical / medium** dictation (under ~90s) → **Groq first** (speed, progressive per live chunk). **Very long** captures → **Gemini first** (accuracy). Then the other cloud provider → OpenAI → Ollama. |
+| **Auto Fallback** | **Very short** (≈ **4–5s**) → **Groq first** (speed). **Longer** dictation → **Gemini first** (quality), with parallel Gemini splits when needed. Then the other cloud provider → OpenAI → Ollama. |
 
 Gemini calls use a short dictation prompt, **minimal thinking**, and an 8s timeout; if `gemini-3.5-flash` is overloaded they retry **`gemini-3.1-flash-lite`** before falling through.
 

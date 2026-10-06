@@ -20,28 +20,56 @@ struct OllamaClient: TextFormatter {
     }
 
     func format(text: String) async throws -> String {
+        try await format(
+            text: text,
+            systemPrompt: LLMPrompt.system,
+            userMessage: LLMPrompt.userMessage(for: text)
+        )
+    }
+
+    func format(
+        text: String,
+        systemPrompt: String,
+        userMessage: String
+    ) async throws -> String {
         do {
-            return try await chat(model: model, text: text)
+            return try await chat(
+                model: model,
+                text: text,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage
+            )
         } catch {
             guard model != fallbackModel else { throw error }
             AppLogger.llm.warning("Primary Ollama model failed; trying fallback \(self.fallbackModel, privacy: .public)")
-            return try await chat(model: fallbackModel, text: text)
+            return try await chat(
+                model: fallbackModel,
+                text: text,
+                systemPrompt: systemPrompt,
+                userMessage: userMessage
+            )
         }
     }
 
-    private func chat(model: String, text: String) async throws -> String {
+    private func chat(
+        model: String,
+        text: String,
+        systemPrompt: String,
+        userMessage: String
+    ) async throws -> String {
         let url = baseURL.appendingPathComponent("api/chat")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = timeout
+        _ = text
 
         let body: [String: Any] = [
             "model": model,
             "stream": false,
             "messages": [
-                ["role": "system", "content": LLMPrompt.system],
-                ["role": "user", "content": LLMPrompt.userMessage(for: text)]
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userMessage]
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

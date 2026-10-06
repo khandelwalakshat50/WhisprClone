@@ -20,7 +20,7 @@ private actor WhisperInferenceGate {
 
 /// Primary production engine — Argmax WhisperKit (CoreML).
 /// Model download/load happens lazily on first transcription.
-final class WhisperKitRecognizer: SpeechRecognizing, @unchecked Sendable {
+final class WhisperKitRecognizer: SpeechRecognizing, LiveChunkASREngine, @unchecked Sendable {
     private let modelName: String
     /// Domain terms that bias decoding (names, jargon, places).
     private let vocabularyBias: String
@@ -35,11 +35,11 @@ final class WhisperKitRecognizer: SpeechRecognizing, @unchecked Sendable {
         self.vocabularyBias = vocabularyBias
     }
 
-    func transcribe(audioURL: URL) async throws -> String {
+    func transcribe(audioURL: URL) async throws -> SpeechTranscription {
         try await transcribe(audioURL: audioURL, promptContext: nil)
     }
 
-    func transcribe(audioURL: URL, promptContext: String?) async throws -> String {
+    func transcribe(audioURL: URL, promptContext: String?) async throws -> SpeechTranscription {
         #if canImport(WhisperKit)
         let box = try await ensureLoaded()
         AppLogger.speech.info("WhisperKit transcription started (\(self.modelName, privacy: .public))")
@@ -55,7 +55,7 @@ final class WhisperKitRecognizer: SpeechRecognizing, @unchecked Sendable {
                     audioPath: audioURL.path,
                     decodeOptions: options
                 )
-                return Self.join(results)
+                return SpeechTranscription(text: Self.join(results))
             } catch {
                 AppLogger.speech.error("WhisperKit transcription failed: \(error.localizedDescription, privacy: .public)")
                 throw AppError.transcriptionFailed(error.localizedDescription)
@@ -67,9 +67,9 @@ final class WhisperKitRecognizer: SpeechRecognizing, @unchecked Sendable {
     }
 
     /// Transcribe pre-resampled 16 kHz mono float samples (live chunk path).
-    func transcribe(samples: [Float], promptContext: String? = nil) async throws -> String {
+    func transcribe(samples: [Float], promptContext: String? = nil) async throws -> SpeechTranscription {
         #if canImport(WhisperKit)
-        guard !samples.isEmpty else { return "" }
+        guard !samples.isEmpty else { return SpeechTranscription(text: "") }
         let box = try await ensureLoaded()
         let count = samples.count
         return try await gate.run {
@@ -84,7 +84,7 @@ final class WhisperKitRecognizer: SpeechRecognizing, @unchecked Sendable {
                     audioArray: samples,
                     decodeOptions: options
                 )
-                return Self.join(results)
+                return SpeechTranscription(text: Self.join(results))
             } catch {
                 AppLogger.speech.error("WhisperKit sample transcription failed: \(error.localizedDescription, privacy: .public)")
                 throw AppError.transcriptionFailed(error.localizedDescription)

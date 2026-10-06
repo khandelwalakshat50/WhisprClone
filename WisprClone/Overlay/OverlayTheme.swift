@@ -98,7 +98,7 @@ enum OverlayTheme {
         case .formatting: return "Refining"
         case .injecting: return "Writing"
         case .success: return "Done"
-        case .failure: return "Unavailable"
+        case .failure: return "Failed"
         }
     }
 
