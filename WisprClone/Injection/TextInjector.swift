@@ -8,7 +8,11 @@ struct TextInjector {
     private let accessibility = AccessibilityInjection()
     private let logger = Logger(subsystem: Constants.bundleIdentifier, category: "TextInjector")
 
-    func inject(_ text: String) async throws {
+    func inject(
+        _ text: String,
+        targetBundleID: String? = nil,
+        targetAppName: String? = nil
+    ) async throws {
         // Without Accessibility trust, macOS silently drops synthesized ⌘V —
         // keep the text on the clipboard and surface the failure instead.
         guard AXIsProcessTrusted() else {
@@ -19,18 +23,24 @@ struct TextInjector {
             throw AppError.injectionFailed("Accessibility off · copied, press ⌘V")
         }
 
-        // AX set-value has no artificial settle delay — use it when the focused
-        // field supports it (Notes, many native apps). Chrome/Gmail often fail AX
-        // and fall through to clipboard.
-        do {
-            try accessibility.inject(text)
-            logger.info("Injected via Accessibility (\(text.count) chars)")
-            DiagnosticLog.write("inject via accessibility chars=\(text.count)")
-            return
-        } catch {
-            logger.info(
-                "Accessibility inject unavailable; clipboard fallback — \(error.localizedDescription, privacy: .public)"
+        // Cursor, Chrome, Slack and other Electron/browser apps report a successful
+        // Accessibility write while the visible editor never changes. Paste with ⌘V.
+        if Self.ignoresAccessibilityInsert(bundleID: targetBundleID, appName: targetAppName) {
+            DiagnosticLog.write(
+                "inject skip accessibility for \(targetAppName ?? targetBundleID ?? "app") — clipboard ⌘V"
             )
+        } else {
+            do {
+                try accessibility.inject(text)
+                logger.info("Injected via Accessibility (\(text.count) chars)")
+                DiagnosticLog.write("inject via accessibility chars=\(text.count)")
+                return
+            } catch {
+                logger.info(
+                    "Accessibility inject unavailable; clipboard fallback — \(error.localizedDescription, privacy: .public)"
+                )
+                DiagnosticLog.write("inject accessibility failed: \(error.localizedDescription)")
+            }
         }
 
         do {
@@ -39,5 +49,16 @@ struct TextInjector {
         } catch {
             throw AppError.injectionFailed(error.localizedDescription)
         }
+    }
+
+    /// Apps whose focused accessibility element is not the text the user sees.
+    private static func ignoresAccessibilityInsert(bundleID: String?, appName: String?) -> Bool {
+        let hint = "\((bundleID ?? "").lowercased()) \((appName ?? "").lowercased())"
+        let markers = [
+            "cursor", "todesktop", "code", "electron", "chrome", "chromium",
+            "brave", "edge", "arc", "firefox", "safari", "slack", "discord",
+            "notion", "figma", "obsidian", "whatsapp", "telegram", "spotify"
+        ]
+        return markers.contains { hint.contains($0) }
     }
 }

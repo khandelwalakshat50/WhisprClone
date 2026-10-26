@@ -668,7 +668,11 @@ final class DictationCoordinator {
         await restorePasteTargetFocus()
         let injectionStart = ContinuousClock.now
         try await AppLogger.measure("injection", logger: AppLogger.injection) {
-            try await injector.inject(cleanedFormatted)
+            try await injector.inject(
+                cleanedFormatted,
+                targetBundleID: targetBundle,
+                targetAppName: targetName
+            )
         }
         timing.injectionSeconds = AppLogger.elapsedMilliseconds(since: injectionStart) / 1000
 

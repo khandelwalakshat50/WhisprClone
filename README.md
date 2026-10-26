@@ -1,101 +1,81 @@
 # WisprClone
 
-Local-first AI dictation for macOS 15+. Menu bar app — no Dock icon.
+A macOS menu-bar dictation app. Double-tap **Fn**, speak, stop, and the text is pasted into the app you were typing in.
 
-**New to this?** Follow the plain-language guide: **[SETUP_FOR_BEGINNERS.md](SETUP_FOR_BEGINNERS.md)**
+Speech goes to **Deepgram Nova-3** over a live WebSocket. Cleanup is optional: **Groq** for short phrases, **OpenAI** for longer ones, **Gemini** only if those fail. Nothing in this repo contains a real API key.
 
-**Architecture, security, troubleshooting, deployment, and Mac-to-Mac migration:**  
-**[PROJECT_HANDBOOK.md](PROJECT_HANDBOOK.md)**
+**Give the app to someone else (they use their own keys):** [SHARING_MAC.md](SHARING_MAC.md)  
+**First-time setup from source:** [SETUP_FOR_BEGINNERS.md](SETUP_FOR_BEGINNERS.md)  
+**Architecture, permissions, and deployment:** [PROJECT_HANDBOOK.md](PROJECT_HANDBOOK.md)
 
-## Requirements
+## What you need
 
-- Xcode 16+ (full Xcode, not Command Line Tools alone)
-- macOS 15+
-- Swift 6
-- Optional: [Ollama](https://ollama.com) for local formatting (`qwen3:8b` / `llama3.2`)
-- Optional: **Deepgram**, **Gemini**, Groq, and/or OpenAI API keys (via `.env` or Preferences)
+- macOS 15 or newer
+- Xcode 16 or newer, if you are building it yourself
+- A **Deepgram** API key (required for transcription)
+- A **Groq** and/or **OpenAI** key if you want the text cleaned up
+- A **Gemini** key only as a last-resort backup
 
-## API keys (`.env`)
+## API keys
 
-1. Copy the template and fill in real keys (never commit `.env`):
+Real keys stay on your Mac. They are never committed.
 
 ```bash
 cp .env.example .env
 ```
 
+Fill in `.env` with your own keys:
+
 ```env
-DEEPGRAM_API_KEY=your_deepgram_key
-GEMINI_API_KEY=AIza...
-OPENAI_API_KEY=sk-...
-GROQ_API_KEY=gsk_...
+DEEPGRAM_API_KEY=
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+GROQ_API_KEY=
 ```
 
-`GOOGLE_API_KEY` is also accepted as an alias for Gemini.
+`GOOGLE_API_KEY` is accepted as another name for the Gemini key.
 
-Default speech engine is **Deepgram Nova-3** (`DEEPGRAM_API_KEY`). WhisperKit and Apple Speech remain available in Preferences.
+On launch the app reads keys from the environment, then `.env`, then `~/Library/Application Support/WisprClone/.env`. Empty Keychain entries are filled from that file. You can also paste keys in **Wispr → Preferences…**. They are stored in the Keychain after that.
 
-2. On launch the app loads keys from (first match wins per key, then merges):
+`.env` is listed in `.gitignore`. Do not remove that line, and do not commit a filled-in `.env`.
 
-1. Process environment  
-2. Working directory / walk-up from the app bundle (finds the repo `.env` when run from Xcode)  
-3. `~/OpenWhisper/.env` (and a few common clone paths) when launched from `/Applications`  
-4. `~/Library/Application Support/WisprClone/.env` (mirrored for Release installs)
-
-Keys are seeded into the **Keychain** when missing. You can also paste/edit them in **Preferences → Formatting**. Use **Reload .env** after editing the file.
-
-## Open & Run
+## Run it
 
 1. Open `WisprClone.xcodeproj` in Xcode.
-2. Allow Xcode to resolve the **WhisperKit** Swift package.
-3. Paste your keys into `.env` (or Preferences).
-4. Run the **WisprClone** scheme (⌘R).
-5. Grant **Microphone**, **Accessibility**, and **Input Monitoring**.
+2. Let Xcode fetch the WhisperKit package (only needed if you switch off Deepgram).
+3. Run the **WisprClone** scheme (⌘R).
+4. Allow **Microphone**, **Accessibility**, and **Input Monitoring**, then quit and reopen the app.
 
-For a polished Release build in Applications, see the beginner guide / handbook deploy notes.
+To hand someone a built app instead of this repo, follow [SHARING_MAC.md](SHARING_MAC.md).
 
 ## Hotkeys
 
 | Action | Binding |
 |---|---|
-| Start dictation | **Double-tap fn** |
-| Stop and transcribe | **Tap fn once** |
-| Toggle dictation | **⌘⇧Space** |
+| Start | Double-tap **Fn** |
+| Stop and paste | Tap **Fn** once |
+| Toggle | **⌘⇧Space** |
 
-Speak → manually stop → Deepgram Nova-3 (live chunks + full-file fallback) → LLM format → paste into the focused app.
+On a Windows keyboard, Fn usually never reaches macOS. Use **⌘⇧Space**.
 
-## Formatting modes
+## How formatting is chosen
 
-| Mode | Behavior |
+Preferences mode **Auto Fallback** (the default):
+
+| Dictation | Order |
 |---|---|
-| **Local Only** | Ollama on your Mac |
-| **Gemini Only** | Google Gemini (`gemini-3.5-flash` by default) |
-| **Groq Only** | Groq Chat Completions |
-| **OpenAI Only** | OpenAI Chat Completions |
-| **Auto Fallback** | **Very short** (≈ **4–5s**) → **Groq first** (speed). **Longer** dictation → **Gemini first** (quality), with parallel Gemini splits when needed. Then the other cloud provider → OpenAI → Ollama. |
+| About 12 seconds or shorter | Groq, then OpenAI, then Gemini |
+| Longer | OpenAI, then Groq, then Gemini |
+| All of those fail | Local Ollama, if it is running |
 
-Gemini calls use a short dictation prompt, **minimal thinking**, and an 8s timeout; if `gemini-3.5-flash` is overloaded they retry **`gemini-3.1-flash-lite`** before falling through.
+Groq uses `qwen/qwen3.8-27b` with reasoning off. OpenAI uses `gpt-5.4-nano`. Gemini is `gemini-3.1-flash-lite`. You can still pin one provider in Preferences.
 
-## Phases
+The model is told to punctuate and remove fillers. It is not supposed to answer a question you dictated. If the reply looks like an answer, the app throws it away and pastes a lightly cleaned transcript instead.
 
-| Phase | Status |
-|---|---|
-| 1 Menu bar skeleton | Done |
-| 2 Floating overlay | Done |
-| 3 Keychain + Permission Manager | Done |
-| 4 Global hotkeys (`CGEventTap`) | Done |
-| 5 Audio recording | Done |
-| 6 RMS VAD | Done |
-| 7 Speech (WhisperKit + Apple) | Done |
-| 8 LLM formatting (Gemini / Groq / OpenAI / Ollama) | Done |
-| 9 Text injection | Done |
-| 10 Settings | Done |
-| 11 Unified OSLog (`AppLogger`) | Done |
-| 12 Final integration polish | Done |
+## Security
 
-## Security notes
-
-- **App Sandbox is disabled** (required for `CGEventTap` and cross-app paste).
-- Hardened Runtime is enabled.
-- `.env` is gitignored — never commit real keys.
-- Runtime storage prefers **Keychain** after the first successful load.
-- Cloud formatting sends **transcript text** (not raw audio) to the chosen provider — only enable keys you intend to use.
+- This GitHub repo is **private**.
+- `.env` has never been committed. `.env.example` has empty placeholders only.
+- Audio is sent to Deepgram. Only the transcript text is sent to Groq, OpenAI, or Gemini, and only to providers whose keys you added.
+- Dictation history stays on the Mac (`UserDefaults`). Debug logs stay in `~/Library/Application Support/WisprClone/`.
+- The app is not sandboxed, because a menu-bar dictation tool has to see global hotkeys and paste into other apps. Do not ship it widely without Developer ID signing and notarization (`PROJECT_HANDBOOK.md`).

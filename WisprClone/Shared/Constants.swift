@@ -105,7 +105,7 @@ enum Constants {
         /// Clipboard restore stays off the critical path with a longer delay.
         static let pasteDeliveryNanoseconds: UInt64 = 35_000_000 // 35 ms
         /// Settle after reactivating the target app before synthesizing ⌘V.
-        static let focusSettleNanoseconds: UInt64 = 25_000_000 // 25 ms
+        static let focusSettleNanoseconds: UInt64 = 80_000_000 // 80 ms
         /// How long the transcript stays on the clipboard before the user's
         /// original clipboard is restored (off the critical path).
         static let clipboardRestoreNanoseconds: UInt64 = 900_000_000 // 900 ms
